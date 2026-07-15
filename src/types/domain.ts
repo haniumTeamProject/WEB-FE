@@ -24,6 +24,7 @@ export interface Building {
   address?: string
   floorCount?: number
   favorite?: boolean
+  status?: FloorSetupStatus // 대시보드 대표 상태(선택)
 }
 
 // 층 세팅 진행 상태 (뱃지) — 서버가 계산해 내려줌

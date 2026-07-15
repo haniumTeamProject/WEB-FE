@@ -1,11 +1,12 @@
-import type { InputHTMLAttributes } from 'react'
+import type { InputHTMLAttributes, Ref } from 'react'
 
 interface Props extends InputHTMLAttributes<HTMLInputElement> {
   label?: string
   error?: string
+  ref?: Ref<HTMLInputElement>
 }
 
-export function Input({ label, error, style, ...rest }: Props) {
+export function Input({ label, error, style, ref, ...rest }: Props) {
   return (
     <label style={{ display: 'block' }}>
       {label && (
@@ -14,6 +15,7 @@ export function Input({ label, error, style, ...rest }: Props) {
         </span>
       )}
       <input
+        ref={ref}
         style={{
           width: '100%',
           height: 48,
@@ -27,7 +29,11 @@ export function Input({ label, error, style, ...rest }: Props) {
         }}
         {...rest}
       />
-      {error && <span style={{ color: '#DC4C4C', fontSize: 12 }}>{error}</span>}
+      {error && (
+        <span style={{ display: 'block', color: '#DC4C4C', fontSize: 12, marginTop: 4 }}>
+          {error}
+        </span>
+      )}
     </label>
   )
 }

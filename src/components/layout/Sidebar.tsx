@@ -1,8 +1,8 @@
 import { NavLink } from 'react-router-dom'
-import type { CSSProperties } from 'react'
 
 const items = [
   { to: '/', label: '대시보드', end: true },
+  { to: '/buildings', label: '건물 관리', end: false },
   { to: '/guidelines', label: '설치 가이드라인', end: false },
 ]
 const bottom = [
@@ -10,34 +10,24 @@ const bottom = [
   { to: '/account', label: '계정' },
 ]
 
-function linkStyle(active: boolean): CSSProperties {
-  return {
-    display: 'block',
-    padding: '14px 24px',
-    margin: '0 16px',
-    borderRadius: 10,
-    fontSize: 15,
-    fontWeight: 600,
-    textDecoration: 'none',
-    color: active ? '#fff' : '#2E3648',
-    background: active ? '#4B70E5' : 'transparent',
-  }
-}
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  [
+    'block mx-4 px-6 py-3.5 rounded-[10px] text-[15px] font-semibold',
+    isActive ? 'bg-brand text-white' : 'text-[#2E3648] hover:bg-gray-50',
+  ].join(' ')
 
 export function Sidebar() {
   return (
-    <nav style={{ width: 240, minHeight: '100vh', borderRight: '1px solid #ECEEF3', paddingTop: 24 }}>
-      <div style={{ padding: '0 24px 24px', fontWeight: 800, fontSize: 22, color: '#4B70E5' }}>
-        Mappin
-      </div>
+    <nav className="w-60 min-h-screen border-r border-line pt-6 bg-white">
+      <div className="px-6 pb-6 text-[22px] font-extrabold text-brand">Mappin</div>
       {items.map((it) => (
-        <NavLink key={it.to} to={it.to} end={it.end} style={({ isActive }) => linkStyle(isActive)}>
+        <NavLink key={it.to} to={it.to} end={it.end} className={linkClass}>
           {it.label}
         </NavLink>
       ))}
-      <hr style={{ margin: '16px 24px', border: 0, borderTop: '1px solid #ECEEF3' }} />
+      <hr className="mx-6 my-4 border-line" />
       {bottom.map((it) => (
-        <NavLink key={it.to} to={it.to} style={({ isActive }) => linkStyle(isActive)}>
+        <NavLink key={it.to} to={it.to} className={linkClass}>
           {it.label}
         </NavLink>
       ))}

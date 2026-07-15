@@ -1,82 +1,44 @@
 /* 세련된 한글 산세리프 — Pretendard (동적 서브셋) */
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
+@import 'tailwindcss';
 
-:root {
+/* 디자인 토큰 → Tailwind 유틸로 노출 (bg-canvas, text-muted, border-line …) */
+@theme {
   --font-sans: 'Pretendard Variable', Pretendard, system-ui, 'Apple SD Gothic Neo',
     'Malgun Gothic', sans-serif;
-
-  --text: #2e3648;
-  --text-muted: #8c99b3;
-  --text-heading: #1a2233;
-  --bg: #f5f6f8;
-  --primary: #4b70e5;
-
-  color-scheme: light;
-  font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--text);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+  --color-brand: #4b70e5;
+  --color-ink: #1a2233;
+  --color-body: #2e3648;
+  --color-muted: #8c99b3;
+  --color-line: #e6e8f0;
+  --color-canvas: #f5f6f8;
+  --color-field: #f5f7fb;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-}
-
-body {
-  background: var(--bg);
-}
-
-/* 전체 화면 채우기 (가운데 정렬·최대폭 제한 없음) */
-#root {
-  width: 100%;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text-heading);
-  margin: 0 0 20px;
-}
-
-h2 {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text-heading);
-  margin: 0 0 12px;
-}
-
-h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-heading);
-  margin: 0 0 8px;
-}
-
-p {
-  margin: 0;
-}
-
-a {
-  color: var(--primary);
-  text-decoration: none;
-}
-a:hover {
-  text-decoration: underline;
-}
-
-button {
-  font-family: inherit;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-body);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  h1 {
+    @apply text-2xl font-bold text-ink mb-5;
+  }
+  h2 {
+    @apply text-xl font-bold text-ink mb-3;
+  }
+  h3 {
+    @apply text-base font-semibold text-ink mb-2;
+  }
+  a {
+    @apply text-brand no-underline;
+  }
 }

@@ -1,27 +1,11 @@
 export function TopBar() {
   return (
-    <header
-      style={{
-        height: 70,
-        borderBottom: '1px solid #ECEEF3',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 32px',
-      }}
-    >
+    <header className="h-[70px] border-b border-line flex items-center justify-between px-8 bg-white">
       <input
         placeholder="검색"
-        style={{
-          width: 360,
-          height: 40,
-          borderRadius: 20,
-          border: '1px solid #ECEEF3',
-          padding: '0 16px',
-          background: '#F5F7FB',
-        }}
+        className="w-[360px] h-10 rounded-full border border-line px-4 bg-field text-sm outline-none"
       />
-      <div style={{ fontSize: 14, color: '#2E3648' }}>
+      <div className="text-sm text-[#2E3648]">
         <strong>PomPu</strong> · Admin
       </div>
     </header>

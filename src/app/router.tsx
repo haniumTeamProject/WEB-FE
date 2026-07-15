@@ -6,6 +6,7 @@ import LoginPage from '@/pages/auth/LoginPage'
 import SignupPage from '@/pages/auth/SignupPage'
 import PendingApprovalPage from '@/pages/auth/PendingApprovalPage'
 import DashboardPage from '@/pages/dashboard/DashboardPage'
+import BuildingManagePage from '@/pages/buildings/BuildingManagePage'
 import BuildingDetailPage from '@/pages/buildings/BuildingDetailPage'
 import BuildingFormPage from '@/pages/buildings/BuildingFormPage'
 import FloorManagePage from '@/pages/buildings/FloorManagePage'
@@ -43,6 +44,7 @@ export const router = createBrowserRouter([
     ),
     children: [
       { path: '/', element: <DashboardPage /> },
+      { path: '/buildings', element: <BuildingManagePage /> },
       { path: '/buildings/new', element: <BuildingFormPage /> },
       { path: '/buildings/:buildingId', element: <BuildingDetailPage /> },
       { path: '/buildings/:buildingId/floors', element: <FloorManagePage /> },

@@ -4,11 +4,11 @@ import { TopBar } from './TopBar'
 
 export function AdminLayout() {
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#F5F6F8' }}>
+    <div className="flex min-h-screen bg-canvas">
       <Sidebar />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div className="flex-1 flex flex-col">
         <TopBar />
-        <main style={{ padding: 32, flex: 1 }}>
+        <main className="flex-1 p-8">
           <Outlet />
         </main>
       </div>

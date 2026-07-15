@@ -19,5 +19,6 @@ export const FLOOR_STATUS_BADGE: Record<
 // 사이드바 메뉴
 export const NAV_ITEMS = [
   { to: '/', label: '대시보드', end: true },
+  { to: '/buildings', label: '건물 관리', end: false },
   { to: '/guidelines', label: '설치 가이드라인', end: false },
 ] as const

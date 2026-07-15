@@ -1,16 +1,17 @@
 import type { CSSProperties, ReactNode } from 'react'
 
-export function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+// className(Tailwind)과 style(레거시 인라인) 둘 다 지원 — 점진적 마이그레이션용
+export function Card({
+  children,
+  className = '',
+  style,
+}: {
+  children: ReactNode
+  className?: string
+  style?: CSSProperties
+}) {
   return (
-    <div
-      style={{
-        background: '#fff',
-        border: '1px solid #E6E8F0',
-        borderRadius: 8,
-        padding: 24,
-        ...style,
-      }}
-    >
+    <div className={`bg-white border border-line rounded-lg p-6 ${className}`} style={style}>
       {children}
     </div>
   )
