@@ -59,11 +59,20 @@ export interface Beacon {
   id: string
   floorId: string
   name: string
+  mac?: string // BLE MAC 주소 = 고유 번호 (예: 44:B1:76:1A:13:B2)
   major: number
   minor: number
   type: BeaconType
   connectorId?: string // 엘베/계단일 때
   isAnchor: boolean
+  x?: number // 설계도 좌표(900 기준)
+  y?: number
+}
+
+export interface Floorplan {
+  floorId: string
+  imageUrl: string // 업로드된 설계도 이미지 (mock: data URL)
+  extracted: boolean // 벽·이동영역 자동 추출 완료 여부
 }
 
 export type LandmarkType = 'room' | 'restroom' | 'facility' | 'entrance'
@@ -74,4 +83,6 @@ export interface Landmark {
   name: string // 사용자가 음성으로 말하는 목적지
   type: LandmarkType
   visualTagId?: string // 시각태그 연결
+  x?: number // 설계도 좌표(900 기준)
+  y?: number
 }

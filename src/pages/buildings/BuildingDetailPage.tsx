@@ -30,9 +30,14 @@ export default function BuildingDetailPage() {
               {building?.code} · {building?.address ?? '주소 미입력'}
             </p>
           </div>
-          <Link to={`/buildings/${buildingId}/floors`}>
-            <Button variant="outline">층 관리</Button>
-          </Link>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Link to={`/buildings/${buildingId}/connectors`}>
+              <Button variant="outline">수직 연결자</Button>
+            </Link>
+            <Link to={`/buildings/${buildingId}/floors`}>
+              <Button variant="outline">층 관리</Button>
+            </Link>
+          </div>
         </div>
 
         <h3 style={{ marginTop: 24 }}>층 목록</h3>
@@ -40,19 +45,36 @@ export default function BuildingDetailPage() {
           {floors?.map((f) => (
             <div
               key={f.id}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '12px 16px',
-                border: '1px solid #E6E8F0',
-                borderRadius: 8,
-              }}
+              className="flex items-center justify-between p-3 border border-line rounded-lg"
             >
-              <span>
-                {f.floor}층 · major {f.major}
-              </span>
-              {f.status && <StatusBadge status={f.status} />}
+              <div className="flex items-center gap-3">
+                <span className="font-medium">
+                  {f.floor}층 · major {f.major}
+                </span>
+                {f.status && <StatusBadge status={f.status} />}
+              </div>
+              <div className="flex gap-2">
+                <Link to={`/buildings/${buildingId}/floors/${f.id}/floorplan`}>
+                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                    설계도
+                  </Button>
+                </Link>
+                <Link to={`/buildings/${buildingId}/floors/${f.id}/map`}>
+                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                    지도 검수
+                  </Button>
+                </Link>
+                <Link to={`/buildings/${buildingId}/floors/${f.id}/beacons`}>
+                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                    비콘
+                  </Button>
+                </Link>
+                <Link to={`/buildings/${buildingId}/floors/${f.id}/landmarks`}>
+                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                    목적지
+                  </Button>
+                </Link>
+              </div>
             </div>
           ))}
           {floors && floors.length === 0 && (
