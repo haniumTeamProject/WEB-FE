@@ -1,44 +1,69 @@
-Fever dream high in the quiet of the night
-You know that I caught it (Oh yeah, you're right, I want it)
-Bad, bad boy, shiny toy with a price
-You know that I bought it (Oh yeah, you're right, I want it)
-Killing me slow, out the window
-I'm always waiting for you to be waiting below
-Devils roll the dice, angels roll their eyes
-What doesn't kill me makes me want you more
-And it's new, the shape of your body
-It's blue, the feeling I've got
-And it's ooh, whoa oh
-It's a cruel summer
-It's cool, that's what I tell 'em
-No rules in breakable heaven
-But ooh, whoa oh
-It's a cruel summer
-With you
-Hang your head low in the glow of the vending machine
-I'm not dying (Oh yeah, you're right, I want it)
-We say that we'll just screw it up in these trying times
-We're not trying (Oh yeah, you're right, I want it)
-So cut the headlights, summer's a knife
-I'm always waiting for you just to cut to the bone
-Devils roll the dice, angels roll their eyes
-And if I bleed, you'll be the last to know
-Oh, it's new, the shape of your body
-It's blue, the feeling I've got
-And it's ooh, whoa oh
-It's a cruel summer
-It's cool, that's what I tell 'em
-No rules in breakable heaven
-But ooh, whoa oh
-It's a cruel summer
-With you
-I'm drunk in the back of the car
-And I cried like a baby coming home from the bar (Oh)
-Said, "I'm fine," but it wasn't true
-I don't wanna keep secrets just to keep you
-And I snuck in through the garden gate
-Every night that summer just to seal my fate (Oh)
-And I scream, "For whatever it's worth
-I love you, ain't that the worst thing you ever heard?"
-He looks up, grinning like a devil
-I
+[Intro: Tyler, The Creator & Playboi Carti]
+For real, for real this time
+For real, for real, for real this time
+Bitch, I cannot fall short
+For real, for real, for real this time (Uh, yeah)
+For real, for real, for real this time
+
+[Chorus: Tyler, The Creator]
+'Cause you make my earth quake
+Oh, you make my earth quake
+Riding around, your love be shakin’ me up
+And it's making my heart break
+'Cause you make my earth quake (Earthquake, ooh)
+Oh, you make my earth quake
+Riding around, your love be shakin’ me up
+And it's making my heart break
+
+[Refrain: Tyler, The Creator & Charlie Wilson]
+Don't leave, it's my fault
+Don't leave, it's my fault
+Don't leave, it's my fault (Girl)
+’Cause when it all comes crashing down, I’ll need you
+
+[Chorus: Tyler, The Creator & Charlie Wilson]
+'Cause you make my earth quake
+Oh, you make my earth quake
+Riding around, you’re telling me something is bad
+And it's making my heart break
+'Cause you make my earth quake
+Oh, you make my earth quake (Earthquake, yeah)
+Riding around, your love be shakin' me up
+And it’s making my heart break (You already know)
+See Tyler, The Creator Live
+Get tickets as low as $96
+[Verse: Playboi Carti]
+We ain't gotta ball, D-Rose, huh
+I don't give a fuck 'bout nothin', huh
+Breathin' like fuck my lungs, huh
+Just might call my lawyer, huh
+Plug gon' set me up, huh (Yeah)
+Bitch, don't set me up (Okay)
+I'm with Tyler, yeah (Slime)
+He ride like the car, huh
+And she wicked, huh, yeah
+Like Woah Vicky, huh, yeah (Like Woah Vicky)
+Oh my God, hold up, um
+These diamonds not Tiffany, huh, yeah (Woah, woah)
+So in love (I been so in love)
+So in love (I been so in love)
+
+[Refrain: Tyler, The Creator & Charlie Wilson]
+Don't leave, it's my fault (Fault)
+Don't leave, it's my fault
+Don't leave, it's my fault (Igor, ayy)
+'Cause when it all comes crashing down, I'll need you (Ayy, ayy)
+
+[Bridge: Tyler, The Creator & Charlie Wilson]
+'Cause you make my earth quake
+I don't want no confrontation, no
+And you don't want my conversation (I don't want no conversation)
+I just need some confirmation on how you feel, for real (For real)
+You don't want no complication, no
+I don't want no side information (I don't want no side information)
+I just need to know what's happening 'cause I'm for real (For real)
+[Outro: Tyler, The Creator]
+I said don't leave, it's my fault (One)
+I said don't leave, it's my fault (Two, two)
+Don't leave, it's, it's my fault, girl (Three, three, three)
+Don't, do-do-do-do-do, I'll need—
