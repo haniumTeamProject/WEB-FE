@@ -41,20 +41,4 @@ Every night that summer just to seal my fate (Oh)
 And I scream, "For whatever it's worth
 I love you, ain't that the worst thing you ever heard?"
 He looks up, grinning like a devil
-It's new, the shape of your body
-It's blue, the feeling I've got
-And it's ooh, whoa oh
-It's a cruel summer
-It's cool, that's what I tell 'em
-No rules in breakable heaven
-But ooh, whoa oh
-It's a cruel summer
-With you
-I'm drunk in the back of the car
-And I cried like a baby coming home from the bar (Oh)
-Said, "I'm fine," but it wasn't true
-I don't wanna keep secrets just to keep you
-And I snuck in through the garden gate
-Every night that summer just to seal my fate (Oh)
-And I scream, "For whatever it's worth
-I love you, ain't that the worst thing you ever heard?"
+I
