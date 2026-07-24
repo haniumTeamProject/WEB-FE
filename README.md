@@ -43,4 +43,4 @@ src/
 ├── api/          # API 호출 함수
 ├── types/        # TypeScript 타입 정의
 └── utils/        # 유틸리티 함수
-```test 2026년  7월 24일 금요일 14시 56분 16초 KST
+```test 2026년  7월 24일 금요일 15시 11분 21초 KST
