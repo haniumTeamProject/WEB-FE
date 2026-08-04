@@ -5,11 +5,16 @@ import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
 import { useMask, useSaveMask } from '@/features/mapEditor/hooks'
+import { useBeacons } from '@/features/beacons/hooks'
+import { useLandmarks } from '@/features/landmarks/hooks'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
+import { generatePathNodes } from '@/features/mapEditor/pathNodes'
+import type { EntrancePoint, PathEdge, PathNode } from '@/features/mapEditor/pathNodes'
 
 const CANVAS_W = 760
+const DESIGN_W = 900 // 비콘/랜드마크 좌표 기준 폭 — FloorMapCanvas.DESIGN_W와 동일
 const FILL: [number, number, number, number] = [75, 112, 229, 120] // 이동영역(반투명 파랑)
 const BARRIER_R = 4 // 벽 펜 반경(px)
 
@@ -23,6 +28,8 @@ export default function MapReviewPage() {
   const { data: floorplan, isLoading } = useFloorplan(floorId)
   const { data: savedMask } = useMask(floorId)
   const save = useSaveMask(floorId)
+  const { data: beacons } = useBeacons(floorId)
+  const { data: landmarks } = useLandmarks(floorId)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -30,6 +37,8 @@ export default function MapReviewPage() {
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const walkableRef = useRef<Uint8Array | null>(null)
   const barrierRef = useRef<Uint8Array | null>(null) // 사용자가 그린 벽
+  const pathNodesRef = useRef<PathNode[]>([])
+  const pathEdgesRef = useRef<PathEdge[]>([])
   const historyRef = useRef<{ w: Uint8Array; b: Uint8Array }[]>([])
   const drawingRef = useRef(false)
   const lastRef = useRef<{ x: number; y: number } | null>(null)
@@ -38,6 +47,8 @@ export default function MapReviewPage() {
   const [threshold, setThreshold] = useState(240) // 이보다 어두운 픽셀 = 벽(경계)
 
   function rebuildMask() {
+    pathNodesRef.current = []
+    pathEdgesRef.current = []
     const mask = maskCanvasRef.current
     const base = baseCanvasRef.current
     const wk = walkableRef.current
@@ -71,6 +82,35 @@ export default function MapReviewPage() {
     ctx.clearRect(0, 0, cv.width, cv.height)
     ctx.drawImage(base, 0, 0)
     if (mask) ctx.drawImage(mask, 0, 0)
+    drawPathNodes(ctx)
+  }
+
+  function drawPathNodes(ctx: CanvasRenderingContext2D) {
+    const nodes = pathNodesRef.current
+    if (!nodes.length) return
+    const byId = new Map(nodes.map((node) => [node.id, node]))
+    ctx.save()
+    ctx.strokeStyle = '#7c3aed'
+    ctx.lineWidth = 1.4
+    pathEdgesRef.current.forEach((edge) => {
+      const a = byId.get(edge.a)
+      const b = byId.get(edge.b)
+      if (!a || !b) return
+      ctx.beginPath()
+      ctx.moveTo(a.x, a.y)
+      ctx.lineTo(b.x, b.y)
+      ctx.stroke()
+    })
+    nodes.forEach((node) => {
+      ctx.beginPath()
+      ctx.arc(node.x, node.y, 4, 0, Math.PI * 2)
+      ctx.fillStyle = node.concave ? '#db2777' : '#7c3aed'
+      ctx.fill()
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 1
+      ctx.stroke()
+    })
+    ctx.restore()
   }
 
   function pushHistory() {
@@ -262,6 +302,28 @@ export default function MapReviewPage() {
     rebuildMask()
     redraw()
   }
+  function onGenerateNodes() {
+    const walkable = walkableRef.current
+    const barriers = barrierRef.current
+    if (!walkable || !barriers || !dims) return
+    const effectiveMask = walkable.slice()
+    for (let index = 0; index < effectiveMask.length; index++) {
+      if (barriers[index]) effectiveMask[index] = 0
+    }
+    const scale = dims.w / DESIGN_W
+    const entrances: EntrancePoint[] = [
+      ...(beacons ?? [])
+        .filter((b) => b.type === 'connector' && b.x != null && b.y != null)
+        .map((b) => ({ x: (b.x as number) * scale, y: (b.y as number) * scale, kind: 'connector' as const })),
+      ...(landmarks ?? [])
+        .filter((l) => l.x != null && l.y != null)
+        .map((l) => ({ x: (l.x as number) * scale, y: (l.y as number) * scale, kind: 'landmark' as const })),
+    ]
+    const { nodes, edges } = generatePathNodes(effectiveMask, dims.w, dims.h, entrances)
+    pathNodesRef.current = nodes
+    pathEdgesRef.current = edges
+    redraw()
+  }
   function onSave() {
     const mask = maskCanvasRef.current
     const base = baseCanvasRef.current
@@ -383,6 +445,9 @@ export default function MapReviewPage() {
               전체 지우기
             </Button>
           </div>
+          <Button variant="outline" className="w-full mt-4" onClick={onGenerateNodes}>
+            경로 노드 설치
+          </Button>
           <Button className="w-full mt-4" disabled={save.isPending} onClick={onSave}>
             {save.isPending ? '저장 중…' : '검수 완료 · 저장'}
           </Button>
