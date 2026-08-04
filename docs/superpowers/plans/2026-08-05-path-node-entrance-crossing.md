@@ -263,8 +263,10 @@ function generatePathNodes(mask, w, h, entrances = []) {
   components.forEach(({ rawLoop, simplifiedLoop }, componentIndex) => {
     const entries = simplifiedLoop.map((point, index) => ({ point, kind: 'corner', segmentIndex: index, t: 0 }))
 
-    function findOrInsert(point, kind, pairKind) {
-      const existing = entries.find((entry) => Math.hypot(entry.point[0] - point[0], entry.point[1] - point[1]) <= MERGE_RADIUS_PX)
+    function findOrInsert(point, kind, pairKind, exclude) {
+      const existing = entries.find(
+        (entry) => entry !== exclude && Math.hypot(entry.point[0] - point[0], entry.point[1] - point[1]) <= MERGE_RADIUS_PX,
+      )
       if (existing) {
         if (kindPriority(kind) > kindPriority(existing.kind)) {
           existing.kind = kind
@@ -288,7 +290,9 @@ function generatePathNodes(mask, w, h, entrances = []) {
         continue
       }
       const facingSnap = nearestPointOnLoop(rawLoop, facingRaw).point
-      const facingEntry = findOrInsert(facingSnap, 'facing', entrance.kind)
+      // 맞은편 지점이 자기 짝인 입구 노드 자체와 병합되지 않도록 제외한다(좁은 복도에서 폭이
+      // MERGE_RADIUS_PX보다 작으면 자기 자신과 합쳐져 버리는 문제 방지 — 스크래치 검증 중 발견됨).
+      const facingEntry = findOrInsert(facingSnap, 'facing', entrance.kind, entranceEntry)
       pairs.push({ entranceEntry, facingEntry })
     }
 
@@ -580,13 +584,13 @@ export function generatePathNodes(
   for (const entrance of entrances) {
     let bestComponentIndex = -1
     let bestSnap: ReturnType<typeof nearestPointOnLoop> | null = null
-    components.forEach((component, index) => {
-      const snap = nearestPointOnLoop(component.rawLoop, [entrance.x, entrance.y])
+    for (let index = 0; index < components.length; index++) {
+      const snap = nearestPointOnLoop(components[index].rawLoop, [entrance.x, entrance.y])
       if (!bestSnap || snap.distance < bestSnap.distance) {
         bestSnap = snap
         bestComponentIndex = index
       }
-    })
+    }
     if (!bestSnap || bestSnap.distance > MAX_SNAP_PX) {
       console.warn(`[pathNodes] entrance snap skipped (too far): kind=${entrance.kind} at (${entrance.x}, ${entrance.y})`)
       continue
@@ -597,8 +601,10 @@ export function generatePathNodes(
   components.forEach(({ rawLoop, simplifiedLoop }, componentIndex) => {
     const entries: LoopEntry[] = simplifiedLoop.map((point, index) => ({ point, kind: 'corner', segmentIndex: index, t: 0 }))
 
-    function findOrInsert(point: Point, kind: NodeKind, pairKind?: 'connector' | 'landmark'): LoopEntry {
-      const existing = entries.find((entry) => Math.hypot(entry.point[0] - point[0], entry.point[1] - point[1]) <= MERGE_RADIUS_PX)
+    function findOrInsert(point: Point, kind: NodeKind, pairKind?: 'connector' | 'landmark', exclude?: LoopEntry): LoopEntry {
+      const existing = entries.find(
+        (entry) => entry !== exclude && Math.hypot(entry.point[0] - point[0], entry.point[1] - point[1]) <= MERGE_RADIUS_PX,
+      )
       if (existing) {
         if (kindPriority(kind) > kindPriority(existing.kind)) {
           existing.kind = kind
@@ -622,7 +628,9 @@ export function generatePathNodes(
         continue
       }
       const facingSnap = nearestPointOnLoop(rawLoop, facingRaw).point
-      const facingEntry = findOrInsert(facingSnap, 'facing', entrance.kind)
+      // 맞은편 지점이 자기 짝인 입구 노드 자체와 병합되지 않도록 제외한다(좁은 복도에서 폭이
+      // MERGE_RADIUS_PX보다 작으면 자기 자신과 합쳐져 버리는 문제 방지 — 스크래치 검증 중 발견됨).
+      const facingEntry = findOrInsert(facingSnap, 'facing', entrance.kind, entranceEntry)
       pairs.push({ entranceEntry, facingEntry })
     }
 
