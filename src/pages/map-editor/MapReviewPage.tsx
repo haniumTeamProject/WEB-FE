@@ -85,30 +85,55 @@ export default function MapReviewPage() {
     drawPathNodes(ctx)
   }
 
+  const ENTRANCE_COLOR: Record<'connector' | 'landmark', string> = {
+    connector: '#2563eb',
+    landmark: '#f2992e',
+  }
+
+  function nodeColor(node: PathNode): string {
+    if (node.type === 'corner') return node.concave ? '#db2777' : '#7c3aed'
+    if (node.type === 'connector' || node.type === 'landmark') return ENTRANCE_COLOR[node.type]
+    return ENTRANCE_COLOR[node.pairKind ?? 'connector']
+  }
+
   function drawPathNodes(ctx: CanvasRenderingContext2D) {
     const nodes = pathNodesRef.current
     if (!nodes.length) return
     const byId = new Map(nodes.map((node) => [node.id, node]))
     ctx.save()
-    ctx.strokeStyle = '#7c3aed'
-    ctx.lineWidth = 1.4
     pathEdgesRef.current.forEach((edge) => {
       const a = byId.get(edge.a)
       const b = byId.get(edge.b)
       if (!a || !b) return
       ctx.beginPath()
+      if (edge.type === 'cross') {
+        ctx.strokeStyle = '#16a34a'
+        ctx.lineWidth = 1.4
+        ctx.setLineDash([4, 3])
+      } else {
+        ctx.strokeStyle = '#7c3aed'
+        ctx.lineWidth = 1.4
+        ctx.setLineDash([])
+      }
       ctx.moveTo(a.x, a.y)
       ctx.lineTo(b.x, b.y)
       ctx.stroke()
     })
+    ctx.setLineDash([])
     nodes.forEach((node) => {
       ctx.beginPath()
       ctx.arc(node.x, node.y, 4, 0, Math.PI * 2)
-      ctx.fillStyle = node.concave ? '#db2777' : '#7c3aed'
-      ctx.fill()
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 1
-      ctx.stroke()
+      if (node.type === 'facing') {
+        ctx.strokeStyle = nodeColor(node)
+        ctx.lineWidth = 1.6
+        ctx.stroke()
+      } else {
+        ctx.fillStyle = nodeColor(node)
+        ctx.fill()
+        ctx.strokeStyle = '#fff'
+        ctx.lineWidth = 1
+        ctx.stroke()
+      }
     })
     ctx.restore()
   }
@@ -412,6 +437,14 @@ export default function MapReviewPage() {
             영역을 <strong>클릭</strong>하면 통행 영역이 채워집니다. 출입구처럼 벽이 뚫려 밖으로 샐 때는{' '}
             <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요.
           </p>
+          <div className="flex flex-wrap gap-3 mt-2 text-[12px] text-muted">
+            <span style={{ color: '#7c3aed' }}>● 코너</span>
+            <span style={{ color: '#db2777' }}>● 벽 끝(오목)</span>
+            <span style={{ color: '#2563eb' }}>● 연결자 입구</span>
+            <span style={{ color: '#f2992e' }}>● 랜드마크 출입구</span>
+            <span>○ 맞은편 지점</span>
+            <span style={{ color: '#16a34a' }}>┄ 횡단 엣지</span>
+          </div>
         </div>
 
         <Card className="w-[260px]">
