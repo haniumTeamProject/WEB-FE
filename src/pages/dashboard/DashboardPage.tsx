@@ -2,8 +2,10 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useBuildings } from '@/features/buildings/hooks'
 import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { FLOOR_STATUS_BADGE } from '@/lib/constants'
+import { AsyncState } from '@/components/ui/AsyncState'
 
 function StatCard({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
   return (
@@ -16,7 +18,7 @@ function StatCard({ label, value, hint }: { label: string; value: ReactNode; hin
 }
 
 export default function DashboardPage() {
-  const { data } = useBuildings()
+  const { data, isLoading, isError, refetch } = useBuildings()
   const buildings = data ?? []
   const totalFloors = buildings.reduce((sum, b) => sum + (b.floorCount ?? 0), 0)
   const ready = buildings.filter((b) => b.status === 'ready').length
@@ -41,8 +43,11 @@ export default function DashboardPage() {
         <Link to="/buildings">건물 관리 →</Link>
       </div>
 
+      {isLoading && <AsyncState status="loading" />}
+      {isError && <AsyncState status="error" onRetry={() => refetch()} />}
+
       <div style={{ display: 'grid', gap: 8 }}>
-        {buildings.slice(0, 5).map((b) => (
+        {!isLoading && !isError && buildings.slice(0, 5).map((b) => (
           <Link
             key={b.id}
             to={`/buildings/${b.id}`}
@@ -64,7 +69,17 @@ export default function DashboardPage() {
             </Card>
           </Link>
         ))}
-        {buildings.length === 0 && <p style={{ color: '#8C99B3' }}>등록된 건물이 없습니다.</p>}
+        {!isLoading && !isError && buildings.length === 0 && (
+          <AsyncState
+            status="empty"
+            title="등록된 건물이 없습니다."
+            action={
+              <Link to="/buildings/new">
+                <Button>건물 등록</Button>
+              </Link>
+            }
+          />
+        )}
       </div>
     </div>
   )

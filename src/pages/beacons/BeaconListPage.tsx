@@ -10,24 +10,25 @@ import {
   useDeleteBeacon,
   useUpdateBeacon,
 } from '@/features/beacons/hooks'
-import type { BeaconType } from '@/types/domain'
+import type { BeaconType, ConnectorType } from '@/types/domain'
 import { FloorMapCanvas } from '@/components/map/FloorMapCanvas'
 import type { MapPoint } from '@/components/map/FloorMapCanvas'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
+import { StepFooter } from '@/components/layout/StepNav'
+import { AsyncState } from '@/components/ui/AsyncState'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { ColorSelect } from '@/components/ui/ColorSelect'
+import { BEACON_TYPE_COLOR as TYPE_COLOR, BEACON_TYPE_LABEL as TYPE_LABEL } from '@/lib/constants'
 
-const TYPE_LABEL: Record<BeaconType, string> = {
-  anchor: '앵커',
-  checkpoint: '체크포인트',
-  connector: '엘베·계단',
-}
-const TYPE_COLOR: Record<BeaconType, string> = {
-  anchor: '#4B70E5',
-  checkpoint: '#29AD72',
-  connector: '#F2992E',
-}
+const TYPE_OPTIONS = (Object.keys(TYPE_LABEL) as BeaconType[]).map((value) => ({
+  value,
+  label: TYPE_LABEL[value],
+  color: TYPE_COLOR[value],
+}))
+const CONNECTOR_TYPE_LABEL: Record<ConnectorType, string> = { elevator: '엘리베이터', stairs: '계단' }
 
 export default function BeaconListPage() {
   const { buildingId = '', floorId = '' } = useParams()
@@ -35,7 +36,7 @@ export default function BeaconListPage() {
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
   const { data: connectors } = useConnectors(buildingId)
-  const { data: beacons } = useBeacons(floorId)
+  const { data: beacons, isLoading: beaconsLoading, isError: beaconsError, refetch: refetchBeacons } = useBeacons(floorId)
   const create = useCreateBeacon(floorId)
   const update = useUpdateBeacon(floorId)
   const del = useDeleteBeacon(floorId)
@@ -45,6 +46,7 @@ export default function BeaconListPage() {
   const [minor, setMinor] = useState('')
   const [type, setType] = useState<BeaconType>('checkpoint')
   const [connectorId, setConnectorId] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
   const valid = name.trim() !== '' && minor !== '' && Number.isInteger(Number(minor))
 
@@ -91,22 +93,21 @@ export default function BeaconListPage() {
       <h1>비콘·체크포인트 등록</h1>
 
       <div className="flex gap-6 items-start">
-        <div>
+        <div className="flex-1 min-w-0">
           <FloorMapCanvas
             floorId={floorId}
             points={points}
-            width={640}
             onMove={(id, x, y) => update.mutate({ beaconId: id, input: { x, y } })}
           />
           <div className="flex flex-wrap gap-4 mt-2 text-[13px] text-muted">
             <span style={{ color: TYPE_COLOR.anchor }}>● 앵커</span>
             <span style={{ color: TYPE_COLOR.checkpoint }}>● 체크포인트</span>
-            <span style={{ color: TYPE_COLOR.connector }}>● 엘베·계단</span>
+            <span style={{ color: TYPE_COLOR.connector }}>● 연결자</span>
             <span>· 점을 드래그해 위치 조정</span>
           </div>
         </div>
 
-        <Card className="w-[320px]">
+        <Card className="w-[320px] shrink-0">
           <h3>비콘 추가</h3>
           <form onSubmit={onSubmit} className="grid gap-3">
             <Input label="이름" placeholder="중앙 갈림길" value={name} onChange={(e) => setName(e.target.value)} />
@@ -125,18 +126,7 @@ export default function BeaconListPage() {
               </div>
               <Input label="minor" type="number" placeholder="10" value={minor} onChange={(e) => setMinor(e.target.value)} />
             </div>
-            <label className="block">
-              <span className="block text-[13px] text-muted mb-2">타입</span>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value as BeaconType)}
-                className="w-full h-12 px-4 rounded-lg border border-[#DEE2EB] bg-field text-sm"
-              >
-                <option value="anchor">앵커</option>
-                <option value="checkpoint">체크포인트</option>
-                <option value="connector">엘베·계단</option>
-              </select>
-            </label>
+            <ColorSelect label="타입" value={type} onChange={setType} options={TYPE_OPTIONS} />
             {type === 'connector' && (
               <label className="block">
                 <span className="block text-[13px] text-muted mb-2">연결자</span>
@@ -146,11 +136,19 @@ export default function BeaconListPage() {
                   className="w-full h-12 px-4 rounded-lg border border-[#DEE2EB] bg-field text-sm"
                 >
                   <option value="">— 선택 —</option>
-                  {connectors?.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
+                  {(['elevator', 'stairs'] as ConnectorType[]).map((connectorType) => {
+                    const options = connectors?.filter((c) => c.type === connectorType) ?? []
+                    if (options.length === 0) return null
+                    return (
+                      <optgroup key={connectorType} label={CONNECTOR_TYPE_LABEL[connectorType]}>
+                        {options.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )
+                  })}
                 </select>
               </label>
             )}
@@ -164,8 +162,10 @@ export default function BeaconListPage() {
 
       <Card className="mt-6">
         <h3>등록된 비콘</h3>
+        {beaconsLoading && <AsyncState status="loading" />}
+        {beaconsError && <AsyncState status="error" onRetry={() => refetchBeacons()} />}
         <div className="grid gap-2">
-          {beacons?.map((b) => (
+          {!beaconsLoading && !beaconsError && beacons?.map((b) => (
             <div key={b.id} className="flex items-center justify-between p-3 border border-line rounded-lg">
               <div className="flex items-center gap-3">
                 <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: TYPE_COLOR[b.type] }} />
@@ -181,21 +181,32 @@ export default function BeaconListPage() {
                     편집
                   </Button>
                 </Link>
-                <Button variant="danger" style={{ height: 34, padding: '0 12px' }} onClick={() => del.mutate(b.id)}>
+                <Button
+                  variant="danger"
+                  style={{ height: 34, padding: '0 12px' }}
+                  onClick={() => setDeleteTarget({ id: b.id, name: b.name })}
+                >
                   삭제
                 </Button>
               </div>
             </div>
           ))}
-          {beacons && beacons.length === 0 && <p className="text-muted">등록된 비콘이 없습니다.</p>}
+          {beacons && beacons.length === 0 && <AsyncState status="empty" title="등록된 비콘이 없습니다." />}
         </div>
-        <Link
-          to={`/buildings/${buildingId}/floors/${floorId}/landmarks`}
-          className="inline-block mt-4 text-sm"
-        >
-          목적지(랜드마크) 관리 →
-        </Link>
       </Card>
+
+      <StepFooter buildingId={buildingId} floorId={floorId} current="beacons" />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="비콘을 삭제할까요?"
+        description={`'${deleteTarget?.name}' — 삭제하면 되돌릴 수 없습니다.`}
+        pending={del.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) del.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) })
+        }}
+      />
     </div>
   )
 }

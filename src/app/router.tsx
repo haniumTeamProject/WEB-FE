@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- 라우트 설정 파일: 컴포넌트가 아닌 router 객체를 export하므로 Fast Refresh 대상이 아님 */
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
@@ -19,6 +20,7 @@ const MapReviewPage = lazy(() => import('@/pages/map-editor/MapReviewPage'))
 const BeaconListPage = lazy(() => import('@/pages/beacons/BeaconListPage'))
 import BeaconEditPage from '@/pages/beacons/BeaconEditPage'
 const LandmarkPage = lazy(() => import('@/pages/landmarks/LandmarkPage'))
+const PathNodePage = lazy(() => import('@/pages/pathnodes/PathNodePage'))
 import AccountApprovalPage from '@/pages/admin/AccountApprovalPage'
 import GuidelinesPage from '@/pages/guidelines/GuidelinesPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
@@ -75,6 +77,14 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<p style={{ color: '#8C99B3' }}>불러오는 중…</p>}>
             <LandmarkPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/buildings/:buildingId/floors/:floorId/path-nodes',
+        element: (
+          <Suspense fallback={<p style={{ color: '#8C99B3' }}>불러오는 중…</p>}>
+            <PathNodePage />
           </Suspense>
         ),
       },

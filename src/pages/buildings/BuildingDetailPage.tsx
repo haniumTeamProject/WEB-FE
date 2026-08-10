@@ -5,12 +5,13 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
+import { AsyncState } from '@/components/ui/AsyncState'
 
 // Figma "건물 상세" — 건물 정보 + 층 목록(상태 뱃지) + 세팅 진입
 export default function BuildingDetailPage() {
   const { buildingId = '' } = useParams()
   const { data: building } = useBuilding(buildingId)
-  const { data: floors } = useFloors(buildingId)
+  const { data: floors, isLoading: floorsLoading, isError: floorsError, refetch: refetchFloors } = useFloors(buildingId)
 
   return (
     <div>
@@ -41,8 +42,10 @@ export default function BuildingDetailPage() {
         </div>
 
         <h3 style={{ marginTop: 24 }}>층 목록</h3>
+        {floorsLoading && <AsyncState status="loading" />}
+        {floorsError && <AsyncState status="error" onRetry={() => refetchFloors()} />}
         <div style={{ display: 'grid', gap: 8 }}>
-          {floors?.map((f) => (
+          {!floorsLoading && !floorsError && floors?.map((f) => (
             <div
               key={f.id}
               className="flex items-center justify-between p-3 border border-line rounded-lg"
@@ -74,11 +77,24 @@ export default function BuildingDetailPage() {
                     목적지
                   </Button>
                 </Link>
+                <Link to={`/buildings/${buildingId}/floors/${f.id}/path-nodes`}>
+                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                    경로노드
+                  </Button>
+                </Link>
               </div>
             </div>
           ))}
           {floors && floors.length === 0 && (
-            <p style={{ color: '#8C99B3' }}>등록된 층이 없습니다. &lsquo;층 관리&rsquo;에서 추가하세요.</p>
+            <AsyncState
+              status="empty"
+              title="등록된 층이 없습니다. '층 관리'에서 추가하세요."
+              action={
+                <Link to={`/buildings/${buildingId}/floors`}>
+                  <Button variant="outline">층 관리</Button>
+                </Link>
+              }
+            />
           )}
         </div>
       </Card>

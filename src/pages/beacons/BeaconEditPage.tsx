@@ -1,59 +1,37 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useBeacons, useDeleteBeacon, useUpdateBeacon } from '@/features/beacons/hooks'
 import { useConnectors } from '@/features/connectors/hooks'
-import type { BeaconType } from '@/types/domain'
+import type { Beacon, BeaconType, Connector, ConnectorType } from '@/types/domain'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
+import { AsyncState } from '@/components/ui/AsyncState'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { ColorSelect } from '@/components/ui/ColorSelect'
+import { BEACON_TYPE_COLOR, BEACON_TYPE_LABEL } from '@/lib/constants'
+
+const CONNECTOR_TYPE_LABEL: Record<ConnectorType, string> = { elevator: '엘리베이터', stairs: '계단' }
+const TYPE_OPTIONS = (Object.keys(BEACON_TYPE_LABEL) as BeaconType[]).map((value) => ({
+  value,
+  label: BEACON_TYPE_LABEL[value],
+  color: BEACON_TYPE_COLOR[value],
+}))
 
 export default function BeaconEditPage() {
   const { buildingId = '', floorId = '', beaconId = '' } = useParams()
   const navigate = useNavigate()
   const { data: building } = useBuilding(buildingId)
-  const { data: beacons, isLoading } = useBeacons(floorId)
+  const { data: beacons, isLoading, isError, refetch } = useBeacons(floorId)
   const { data: connectors } = useConnectors(buildingId)
   const update = useUpdateBeacon(floorId)
   const del = useDeleteBeacon(floorId)
   const beacon = beacons?.find((b) => b.id === beaconId)
 
-  const [name, setName] = useState('')
-  const [mac, setMac] = useState('')
-  const [minor, setMinor] = useState('')
-  const [type, setType] = useState<BeaconType>('checkpoint')
-  const [connectorId, setConnectorId] = useState('')
-
-  useEffect(() => {
-    if (beacon) {
-      setName(beacon.name)
-      setMac(beacon.mac ?? '')
-      setMinor(String(beacon.minor))
-      setType(beacon.type)
-      setConnectorId(beacon.connectorId ?? '')
-    }
-  }, [beacon])
-
   const backTo = `/buildings/${buildingId}/floors/${floorId}/beacons`
-
-  function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    update.mutate(
-      {
-        beaconId,
-        input: {
-          name: name.trim(),
-          mac: mac.trim() || undefined,
-          minor: Number(minor),
-          type,
-          connectorId: type === 'connector' ? connectorId || undefined : undefined,
-        },
-      },
-      { onSuccess: () => navigate(backTo) },
-    )
-  }
 
   const crumbs = [
     { label: '홈', to: '/' },
@@ -63,12 +41,25 @@ export default function BeaconEditPage() {
     { label: '편집' },
   ]
 
-  if (isLoading) return <p className="text-muted">불러오는 중…</p>
+  if (isLoading)
+    return (
+      <div>
+        <Breadcrumb items={crumbs} />
+        <AsyncState status="loading" />
+      </div>
+    )
+  if (isError)
+    return (
+      <div>
+        <Breadcrumb items={crumbs} />
+        <AsyncState status="error" onRetry={() => refetch()} />
+      </div>
+    )
   if (!beacon)
     return (
       <div>
         <Breadcrumb items={crumbs} />
-        <p className="text-muted">비콘을 찾을 수 없습니다.</p>
+        <AsyncState status="empty" title="비콘을 찾을 수 없습니다." />
       </div>
     )
 
@@ -76,66 +67,123 @@ export default function BeaconEditPage() {
     <div>
       <Breadcrumb items={crumbs} />
       <h1>비콘 편집</h1>
-      <Card style={{ maxWidth: 560 }}>
-        <form onSubmit={onSubmit} className="grid gap-4">
-          <Input label="이름" value={name} onChange={(e) => setName(e.target.value)} />
-          <Input label="고유 번호 (MAC)" placeholder="44:B1:76:1A:13:B2" value={mac} onChange={(e) => setMac(e.target.value)} />
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <span className="block text-[13px] text-muted mb-2">major (자동)</span>
-              <div className="h-12 px-4 rounded-lg border border-line bg-field text-sm flex items-center text-muted">
-                {beacon.major}
-              </div>
+      {/* beacon.id로 key를 줘 비콘이 바뀌면 폼이 다시 마운트되며 필드를 새로 초기화한다(useEffect로 동기화하지 않음) */}
+      <BeaconEditForm
+        key={beacon.id}
+        beacon={beacon}
+        connectors={connectors}
+        onSubmit={(input) => update.mutate({ beaconId, input }, { onSuccess: () => navigate(backTo) })}
+        onDelete={() => del.mutate(beaconId, { onSuccess: () => navigate(backTo) })}
+        onCancel={() => navigate(backTo)}
+        submitting={update.isPending}
+        deleting={del.isPending}
+      />
+    </div>
+  )
+}
+
+function BeaconEditForm({
+  beacon,
+  connectors,
+  onSubmit,
+  onDelete,
+  onCancel,
+  submitting,
+  deleting,
+}: {
+  beacon: Beacon
+  connectors: Connector[] | undefined
+  onSubmit: (input: {
+    name: string
+    mac: string | undefined
+    minor: number
+    type: BeaconType
+    connectorId: string | undefined
+  }) => void
+  onDelete: () => void
+  onCancel: () => void
+  submitting: boolean
+  deleting: boolean
+}) {
+  const [name, setName] = useState(beacon.name)
+  const [mac, setMac] = useState(beacon.mac ?? '')
+  const [minor, setMinor] = useState(String(beacon.minor))
+  const [type, setType] = useState<BeaconType>(beacon.type)
+  const [connectorId, setConnectorId] = useState(beacon.connectorId ?? '')
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    onSubmit({
+      name: name.trim(),
+      mac: mac.trim() || undefined,
+      minor: Number(minor),
+      type,
+      connectorId: type === 'connector' ? connectorId || undefined : undefined,
+    })
+  }
+
+  return (
+    <Card style={{ maxWidth: 560, margin: '0 auto' }}>
+      <form onSubmit={handleSubmit} className="grid gap-4">
+        <Input label="이름" value={name} onChange={(e) => setName(e.target.value)} />
+        <Input label="고유 번호 (MAC)" placeholder="44:B1:76:1A:13:B2" value={mac} onChange={(e) => setMac(e.target.value)} />
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <span className="block text-[13px] text-muted mb-2">major (자동)</span>
+            <div className="h-12 px-4 rounded-lg border border-line bg-field text-sm flex items-center text-muted">
+              {beacon.major}
             </div>
-            <Input label="minor" type="number" value={minor} onChange={(e) => setMinor(e.target.value)} />
           </div>
+          <Input label="minor" type="number" value={minor} onChange={(e) => setMinor(e.target.value)} />
+        </div>
+        <ColorSelect label="타입" value={type} onChange={setType} options={TYPE_OPTIONS} />
+        {type === 'connector' && (
           <label className="block">
-            <span className="block text-[13px] text-muted mb-2">타입</span>
+            <span className="block text-[13px] text-muted mb-2">연결자</span>
             <select
-              value={type}
-              onChange={(e) => setType(e.target.value as BeaconType)}
+              value={connectorId}
+              onChange={(e) => setConnectorId(e.target.value)}
               className="w-full h-12 px-4 rounded-lg border border-[#DEE2EB] bg-field text-sm"
             >
-              <option value="anchor">앵커</option>
-              <option value="checkpoint">체크포인트</option>
-              <option value="connector">엘베·계단</option>
+              <option value="">— 선택 —</option>
+              {(['elevator', 'stairs'] as ConnectorType[]).map((connectorType) => {
+                const options = connectors?.filter((c) => c.type === connectorType) ?? []
+                if (options.length === 0) return null
+                return (
+                  <optgroup key={connectorType} label={CONNECTOR_TYPE_LABEL[connectorType]}>
+                    {options.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )
+              })}
             </select>
           </label>
-          {type === 'connector' && (
-            <label className="block">
-              <span className="block text-[13px] text-muted mb-2">연결자</span>
-              <select
-                value={connectorId}
-                onChange={(e) => setConnectorId(e.target.value)}
-                className="w-full h-12 px-4 rounded-lg border border-[#DEE2EB] bg-field text-sm"
-              >
-                <option value="">— 선택 —</option>
-                {connectors?.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <div className="flex gap-3">
-            <Button type="submit" disabled={update.isPending}>
-              저장
-            </Button>
-            <Button
-              type="button"
-              variant="danger"
-              disabled={del.isPending}
-              onClick={() => del.mutate(beaconId, { onSuccess: () => navigate(backTo) })}
-            >
-              삭제
-            </Button>
-            <Button type="button" variant="outline" onClick={() => navigate(backTo)}>
-              취소
-            </Button>
-          </div>
-        </form>
-      </Card>
-    </div>
+        )}
+        <div className="flex gap-3">
+          <Button type="submit" disabled={submitting}>
+            저장
+          </Button>
+          <Button type="button" variant="danger" disabled={deleting} onClick={() => setConfirmDeleteOpen(true)}>
+            삭제
+          </Button>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            취소
+          </Button>
+        </div>
+      </form>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="비콘을 삭제할까요?"
+        description={`'${beacon.name}' — 삭제하면 되돌릴 수 없습니다.`}
+        pending={deleting}
+        onCancel={() => setConfirmDeleteOpen(false)}
+        onConfirm={onDelete}
+      />
+    </Card>
   )
 }

@@ -1,5 +1,5 @@
 import type { DragEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import {
@@ -10,6 +10,8 @@ import {
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
+import { StepFooter } from '@/components/layout/StepNav'
+import { AsyncState } from '@/components/ui/AsyncState'
 
 function readFileAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -25,7 +27,7 @@ export default function FloorplanUploadPage() {
   const { data: building } = useBuilding(buildingId)
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
-  const { data: floorplan, isLoading } = useFloorplan(floorId)
+  const { data: floorplan, isLoading, isError, refetch } = useFloorplan(floorId)
   const upload = useUploadFloorplan(floorId)
   const del = useDeleteFloorplan(floorId)
 
@@ -61,7 +63,9 @@ export default function FloorplanUploadPage() {
         </p>
 
         {isLoading ? (
-          <p className="text-muted">불러오는 중…</p>
+          <AsyncState status="loading" />
+        ) : isError ? (
+          <AsyncState status="error" onRetry={() => refetch()} />
         ) : floorplan ? (
           <div>
             <div className="flex items-center gap-3 mb-4">
@@ -75,12 +79,9 @@ export default function FloorplanUploadPage() {
             <img
               src={floorplan.imageUrl}
               alt="설계도 미리보기"
-              className="max-w-full max-h-[420px] rounded-lg border border-line"
+              className="w-full h-auto max-h-[70vh] object-contain rounded-lg border border-line bg-field"
             />
             <div className="flex gap-3 mt-5">
-              <Link to={`/buildings/${buildingId}/floors/${floorId}/map`}>
-                <Button>검수하러 가기</Button>
-              </Link>
               <Button variant="outline" disabled={del.isPending} onClick={() => del.mutate()}>
                 다시 업로드
               </Button>
@@ -108,6 +109,8 @@ export default function FloorplanUploadPage() {
           </label>
         )}
       </Card>
+
+      {floorplan && <StepFooter buildingId={buildingId} floorId={floorId} current="floorplan" />}
     </div>
   )
 }

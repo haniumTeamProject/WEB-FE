@@ -4,12 +4,13 @@ import { useBuildings, useDeleteBuilding } from '@/features/buildings/hooks'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { StatusBadge } from '@/components/ui/Badge'
-import { Modal } from '@/components/ui/Modal'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
+import { AsyncState } from '@/components/ui/AsyncState'
 
 // 건물 목록/관리 — 등록·삭제·상세 진입
 export default function BuildingManagePage() {
-  const { data, isLoading, isError } = useBuildings()
+  const { data, isLoading, isError, refetch } = useBuildings()
   const del = useDeleteBuilding()
   const navigate = useNavigate()
   const [target, setTarget] = useState<{ id: string; name: string } | null>(null)
@@ -24,11 +25,11 @@ export default function BuildingManagePage() {
         <Button onClick={() => navigate('/buildings/new')}>건물 등록</Button>
       </div>
 
-      {isLoading && <p>불러오는 중…</p>}
-      {isError && <p>불러오기 실패</p>}
+      {isLoading && <AsyncState status="loading" />}
+      {isError && <AsyncState status="error" onRetry={() => refetch()} />}
 
       <div style={{ display: 'grid', gap: 12 }}>
-        {data?.map((b) => (
+        {!isLoading && !isError && data?.map((b) => (
           <Card
             key={b.id}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
@@ -52,32 +53,24 @@ export default function BuildingManagePage() {
           </Card>
         ))}
         {data && data.length === 0 && (
-          <Card style={{ textAlign: 'center', color: '#8C99B3', padding: 48 }}>
-            등록된 건물이 없습니다. 우측 상단 &lsquo;건물 등록&rsquo;으로 시작하세요.
-          </Card>
+          <AsyncState
+            status="empty"
+            title="등록된 건물이 없습니다."
+            action={<Button onClick={() => navigate('/buildings/new')}>건물 등록</Button>}
+          />
         )}
       </div>
 
-      <Modal open={!!target} onClose={() => setTarget(null)}>
-        <h2 style={{ marginTop: 0 }}>건물을 삭제할까요?</h2>
-        <p style={{ color: '#8C99B3' }}>
-          &lsquo;{target?.name}&rsquo; — 삭제하면 되돌릴 수 없습니다. 등록된 층·비콘·설계도가 모두 삭제됩니다.
-        </p>
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 }}>
-          <Button variant="outline" onClick={() => setTarget(null)}>
-            취소
-          </Button>
-          <Button
-            variant="danger"
-            disabled={del.isPending}
-            onClick={() => {
-              if (target) del.mutate(target.id, { onSuccess: () => setTarget(null) })
-            }}
-          >
-            삭제
-          </Button>
-        </div>
-      </Modal>
+      <ConfirmDialog
+        open={!!target}
+        title="건물을 삭제할까요?"
+        description={`'${target?.name}' — 삭제하면 되돌릴 수 없습니다. 등록된 층·비콘·설계도가 모두 삭제됩니다.`}
+        pending={del.isPending}
+        onCancel={() => setTarget(null)}
+        onConfirm={() => {
+          if (target) del.mutate(target.id, { onSuccess: () => setTarget(null) })
+        }}
+      />
     </div>
   )
 }

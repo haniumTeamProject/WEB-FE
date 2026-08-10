@@ -16,32 +16,31 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
+import { StepFooter } from '@/components/layout/StepNav'
+import { AsyncState } from '@/components/ui/AsyncState'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { ColorSelect } from '@/components/ui/ColorSelect'
+import { LANDMARK_TYPE_COLOR as TYPE_COLOR, LANDMARK_TYPE_LABEL as TYPE_LABEL } from '@/lib/constants'
 
-const TYPE_LABEL: Record<LandmarkType, string> = {
-  room: '강의실/방',
-  restroom: '화장실',
-  facility: '편의시설',
-  entrance: '출입구',
-}
-const TYPE_COLOR: Record<LandmarkType, string> = {
-  room: '#4B70E5',
-  restroom: '#29AD72',
-  facility: '#8C5BD6',
-  entrance: '#F2992E',
-}
+const TYPE_OPTIONS = (Object.keys(TYPE_LABEL) as LandmarkType[]).map((value) => ({
+  value,
+  label: TYPE_LABEL[value],
+  color: TYPE_COLOR[value],
+}))
 
 export default function LandmarkPage() {
   const { buildingId = '', floorId = '' } = useParams()
   const { data: building } = useBuilding(buildingId)
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
-  const { data: landmarks } = useLandmarks(floorId)
+  const { data: landmarks, isLoading: landmarksLoading, isError: landmarksError, refetch: refetchLandmarks } = useLandmarks(floorId)
   const create = useCreateLandmark(floorId)
   const update = useUpdateLandmark(floorId)
   const del = useDeleteLandmark(floorId)
 
   const [name, setName] = useState('')
   const [type, setType] = useState<LandmarkType>('room')
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
   const valid = name.trim() !== ''
 
@@ -77,11 +76,10 @@ export default function LandmarkPage() {
       <h1>목적지(랜드마크) 관리</h1>
 
       <div className="flex gap-6 items-start">
-        <div>
+        <div className="flex-1 min-w-0">
           <FloorMapCanvas
             floorId={floorId}
             points={points}
-            width={640}
             onMove={(id, x, y) => update.mutate({ landmarkId: id, input: { x, y } })}
           />
           <p className="mt-2 text-[13px] text-muted">
@@ -89,23 +87,11 @@ export default function LandmarkPage() {
           </p>
         </div>
 
-        <Card className="w-[320px]">
+        <Card className="w-[320px] shrink-0">
           <h3>목적지 추가</h3>
           <form onSubmit={onSubmit} className="grid gap-3">
             <Input label="이름" placeholder="406호" value={name} onChange={(e) => setName(e.target.value)} />
-            <label className="block">
-              <span className="block text-[13px] text-muted mb-2">타입</span>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value as LandmarkType)}
-                className="w-full h-12 px-4 rounded-lg border border-[#DEE2EB] bg-field text-sm"
-              >
-                <option value="room">강의실/방</option>
-                <option value="restroom">화장실</option>
-                <option value="facility">편의시설</option>
-                <option value="entrance">출입구</option>
-              </select>
-            </label>
+            <ColorSelect label="타입" value={type} onChange={setType} options={TYPE_OPTIONS} />
             <Button type="submit" disabled={!valid || create.isPending}>
               목적지 추가
             </Button>
@@ -115,22 +101,41 @@ export default function LandmarkPage() {
 
       <Card className="mt-6">
         <h3>등록된 목적지</h3>
+        {landmarksLoading && <AsyncState status="loading" />}
+        {landmarksError && <AsyncState status="error" onRetry={() => refetchLandmarks()} />}
         <div className="grid gap-2">
-          {landmarks?.map((l) => (
+          {!landmarksLoading && !landmarksError && landmarks?.map((l) => (
             <div key={l.id} className="flex items-center justify-between p-3 border border-line rounded-lg">
               <div className="flex items-center gap-3">
                 <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: TYPE_COLOR[l.type] }} />
                 <span className="font-medium">{l.name}</span>
                 <span className="text-[13px] text-muted">{TYPE_LABEL[l.type]}</span>
               </div>
-              <Button variant="danger" style={{ height: 34, padding: '0 12px' }} onClick={() => del.mutate(l.id)}>
+              <Button
+                variant="danger"
+                style={{ height: 34, padding: '0 12px' }}
+                onClick={() => setDeleteTarget({ id: l.id, name: l.name })}
+              >
                 삭제
               </Button>
             </div>
           ))}
-          {landmarks && landmarks.length === 0 && <p className="text-muted">등록된 목적지가 없습니다.</p>}
+          {landmarks && landmarks.length === 0 && <AsyncState status="empty" title="등록된 목적지가 없습니다." />}
         </div>
       </Card>
+
+      <StepFooter buildingId={buildingId} floorId={floorId} current="landmarks" />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="목적지를 삭제할까요?"
+        description={`'${deleteTarget?.name}' — 삭제하면 되돌릴 수 없습니다.`}
+        pending={del.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) del.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) })
+        }}
+      />
     </div>
   )
 }

@@ -6,6 +6,7 @@ import { useCreateBuilding } from '@/features/buildings/hooks'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { Breadcrumb } from '@/components/layout/Breadcrumb'
 
 const schema = z.object({
   name: z.string().min(1, '건물명을 입력하세요'),
@@ -41,20 +42,26 @@ export default function BuildingFormPage() {
 
   return (
     <div>
+      <Breadcrumb items={[{ label: '홈', to: '/' }, { label: '건물 관리', to: '/buildings' }, { label: '건물 등록' }]} />
       <h1>건물 등록</h1>
-      <Card style={{ maxWidth: 720 }}>
+      <Card>
         <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'grid', gap: 20 }}>
-          <Input label="건물명" placeholder="예: ICT융합대학" error={errors.name?.message} {...register('name')} />
-          <Input label="건물 코드" placeholder="suwon_ict" error={errors.code?.message} {...register('code')} />
-          <Input label="주소" placeholder="경기도 화성시 …" error={errors.address?.message} {...register('address')} />
-          <Input
-            label="층 수"
-            type="number"
-            placeholder="예: 5"
-            error={errors.floorCount?.message}
-            {...register('floorCount')}
-          />
-          <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+            <Input label="건물명" placeholder="예: ICT융합대학" error={errors.name?.message} {...register('name')} />
+            <Input label="건물 코드" placeholder="suwon_ict" error={errors.code?.message} {...register('code')} />
+            <Input label="주소" placeholder="경기도 화성시 …" error={errors.address?.message} {...register('address')} />
+            <Input
+              label="총 층수"
+              type="number"
+              placeholder="예: 5"
+              error={errors.floorCount?.message}
+              {...register('floorCount')}
+            />
+          </div>
+          {create.isError && (
+            <p style={{ color: '#DC4C4C', fontSize: 13 }}>건물 등록에 실패했습니다. 건물 코드가 중복되지 않았는지 확인해 주세요.</p>
+          )}
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
             <Button type="submit" disabled={create.isPending}>
               {create.isPending ? '저장 중…' : '저장'}
             </Button>

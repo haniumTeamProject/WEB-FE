@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useCreateFloor, useDeleteFloor, useFloors } from '@/features/floors/hooks'
 import { useBuilding } from '@/features/buildings/hooks'
 import { majorForFloor } from '@/lib/utils'
@@ -8,14 +8,17 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
+import { AsyncState } from '@/components/ui/AsyncState'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 export default function FloorManagePage() {
   const { buildingId = '' } = useParams()
-  const { data: floors } = useFloors(buildingId)
+  const { data: floors, isLoading: floorsLoading, isError: floorsError, refetch: refetchFloors } = useFloors(buildingId)
   const { data: building } = useBuilding(buildingId)
   const createFloor = useCreateFloor(buildingId)
   const deleteFloor = useDeleteFloor(buildingId)
   const [floorNo, setFloorNo] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null)
 
   const parsed = Number(floorNo)
   const valid = floorNo !== '' && Number.isInteger(parsed) && parsed >= 1
@@ -59,8 +62,10 @@ export default function FloorManagePage() {
 
         <Card>
           <h3 style={{ marginTop: 0 }}>등록된 층</h3>
+          {floorsLoading && <AsyncState status="loading" />}
+          {floorsError && <AsyncState status="error" onRetry={() => refetchFloors()} />}
           <div style={{ display: 'grid', gap: 8 }}>
-            {floors?.map((f) => (
+            {!floorsLoading && !floorsError && floors?.map((f) => (
               <div
                 key={f.id}
                 style={{
@@ -72,28 +77,42 @@ export default function FloorManagePage() {
                   borderRadius: 8,
                 }}
               >
-                <span>
+                <Link
+                  to={`/buildings/${buildingId}/floors/${f.id}/floorplan`}
+                  style={{ color: 'inherit', textDecoration: 'none' }}
+                  onMouseOver={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+                  onMouseOut={(e) => (e.currentTarget.style.textDecoration = 'none')}
+                >
                   {f.floor}층 · major {f.major}
-                </span>
+                </Link>
                 <Button
                   variant="danger"
                   style={{ height: 36, padding: '0 14px' }}
                   disabled={deleteFloor.isPending}
-                  onClick={() => deleteFloor.mutate(f.id)}
+                  onClick={() => setDeleteTarget({ id: f.id, label: `${f.floor}층 · major ${f.major}` })}
                 >
                   삭제
                 </Button>
               </div>
             ))}
-            {floors && floors.length === 0 && (
-              <p style={{ color: '#8C99B3' }}>등록된 층이 없습니다.</p>
-            )}
+            {floors && floors.length === 0 && <AsyncState status="empty" title="등록된 층이 없습니다." />}
           </div>
           <p style={{ color: '#8C99B3', fontSize: 13, marginTop: 12 }}>
             major는 100+층으로 자동 부여됩니다.
           </p>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="층을 삭제할까요?"
+        description={`'${deleteTarget?.label}' — 삭제하면 되돌릴 수 없습니다. 이 층의 설계도·지도 검수·비콘·목적지·경로노드가 모두 삭제됩니다.`}
+        pending={deleteFloor.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) deleteFloor.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) })
+        }}
+      />
     </div>
   )
 }

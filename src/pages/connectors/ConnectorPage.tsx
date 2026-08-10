@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import {
@@ -13,6 +13,8 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
+import { AsyncState } from '@/components/ui/AsyncState'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const TYPE_LABEL: Record<ConnectorType, string> = { elevator: '엘리베이터', stairs: '계단' }
 
@@ -20,13 +22,14 @@ export default function ConnectorPage() {
   const { buildingId = '' } = useParams()
   const { data: building } = useBuilding(buildingId)
   const { data: floors } = useFloors(buildingId)
-  const { data: connectors } = useConnectors(buildingId)
+  const { data: connectors, isLoading: connectorsLoading, isError: connectorsError, refetch: refetchConnectors } = useConnectors(buildingId)
   const create = useCreateConnector(buildingId)
   const del = useDeleteConnector(buildingId)
 
   const [name, setName] = useState('')
   const [type, setType] = useState<ConnectorType>('elevator')
   const [selected, setSelected] = useState<number[]>([])
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
   const toggleFloor = (f: number) =>
     setSelected((prev) => (prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f].sort((a, b) => a - b)))
@@ -103,7 +106,12 @@ export default function ConnectorPage() {
                   )
                 })}
                 {floors && floors.length === 0 && (
-                  <span className="text-muted text-sm">먼저 &lsquo;층 관리&rsquo;에서 층을 등록하세요.</span>
+                  <div className="text-sm">
+                    <span className="text-muted">아직 등록된 층이 없습니다. </span>
+                    <Link to={`/buildings/${buildingId}/floors`} className="text-brand font-semibold hover:underline">
+                      층 관리에서 등록하기 →
+                    </Link>
+                  </div>
                 )}
               </div>
             </div>
@@ -116,8 +124,10 @@ export default function ConnectorPage() {
         {/* 선언된 연결자 */}
         <Card>
           <h3>선언된 연결자</h3>
+          {connectorsLoading && <AsyncState status="loading" />}
+          {connectorsError && <AsyncState status="error" onRetry={() => refetchConnectors()} />}
           <div className="grid gap-2">
-            {connectors?.map((c) => (
+            {!connectorsLoading && !connectorsError && connectors?.map((c) => (
               <div
                 key={c.id}
                 className="flex items-center justify-between p-4 border border-line rounded-lg"
@@ -132,14 +142,14 @@ export default function ConnectorPage() {
                   variant="danger"
                   style={{ height: 36, padding: '0 14px' }}
                   disabled={del.isPending}
-                  onClick={() => del.mutate(c.id)}
+                  onClick={() => setDeleteTarget({ id: c.id, name: c.name })}
                 >
                   삭제
                 </Button>
               </div>
             ))}
             {connectors && connectors.length === 0 && (
-              <p className="text-muted">선언된 연결자가 없습니다.</p>
+              <AsyncState status="empty" title="선언된 연결자가 없습니다." />
             )}
           </div>
           <p className="text-muted text-[13px] mt-3">
@@ -147,6 +157,17 @@ export default function ConnectorPage() {
           </p>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="연결자를 삭제할까요?"
+        description={`'${deleteTarget?.name}' — 삭제하면 되돌릴 수 없습니다. 이 연결자를 참조하는 층의 비콘 연결이 끊어집니다.`}
+        pending={del.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) del.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) })
+        }}
+      />
     </div>
   )
 }

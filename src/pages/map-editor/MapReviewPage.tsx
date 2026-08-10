@@ -5,16 +5,13 @@ import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
 import { useMask, useSaveMask } from '@/features/mapEditor/hooks'
-import { useBeacons } from '@/features/beacons/hooks'
-import { useLandmarks } from '@/features/landmarks/hooks'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
-import { generatePathNodes } from '@/features/mapEditor/pathNodes'
-import type { EntrancePoint, PathEdge, PathNode } from '@/features/mapEditor/pathNodes'
+import { StepFooter } from '@/components/layout/StepNav'
 
 const CANVAS_W = 760
-const DESIGN_W = 900 // 비콘/랜드마크 좌표 기준 폭 — FloorMapCanvas.DESIGN_W와 동일
 const FILL: [number, number, number, number] = [75, 112, 229, 120] // 이동영역(반투명 파랑)
 const BARRIER_R = 4 // 벽 펜 반경(px)
 
@@ -28,8 +25,6 @@ export default function MapReviewPage() {
   const { data: floorplan, isLoading } = useFloorplan(floorId)
   const { data: savedMask } = useMask(floorId)
   const save = useSaveMask(floorId)
-  const { data: beacons } = useBeacons(floorId)
-  const { data: landmarks } = useLandmarks(floorId)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -37,18 +32,15 @@ export default function MapReviewPage() {
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const walkableRef = useRef<Uint8Array | null>(null)
   const barrierRef = useRef<Uint8Array | null>(null) // 사용자가 그린 벽
-  const pathNodesRef = useRef<PathNode[]>([])
-  const pathEdgesRef = useRef<PathEdge[]>([])
   const historyRef = useRef<{ w: Uint8Array; b: Uint8Array }[]>([])
   const drawingRef = useRef(false)
   const lastRef = useRef<{ x: number; y: number } | null>(null)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
   const [tool, setTool] = useState<Tool>('fill')
   const [threshold, setThreshold] = useState(240) // 이보다 어두운 픽셀 = 벽(경계)
 
   function rebuildMask() {
-    pathNodesRef.current = []
-    pathEdgesRef.current = []
     const mask = maskCanvasRef.current
     const base = baseCanvasRef.current
     const wk = walkableRef.current
@@ -82,60 +74,6 @@ export default function MapReviewPage() {
     ctx.clearRect(0, 0, cv.width, cv.height)
     ctx.drawImage(base, 0, 0)
     if (mask) ctx.drawImage(mask, 0, 0)
-    drawPathNodes(ctx)
-  }
-
-  const ENTRANCE_COLOR: Record<'connector' | 'landmark', string> = {
-    connector: '#2563eb',
-    landmark: '#f2992e',
-  }
-
-  function nodeColor(node: PathNode): string {
-    if (node.type === 'corner') return node.concave ? '#db2777' : '#7c3aed'
-    if (node.type === 'connector' || node.type === 'landmark') return ENTRANCE_COLOR[node.type]
-    return ENTRANCE_COLOR[node.pairKind ?? 'connector']
-  }
-
-  function drawPathNodes(ctx: CanvasRenderingContext2D) {
-    const nodes = pathNodesRef.current
-    if (!nodes.length) return
-    const byId = new Map(nodes.map((node) => [node.id, node]))
-    ctx.save()
-    pathEdgesRef.current.forEach((edge) => {
-      const a = byId.get(edge.a)
-      const b = byId.get(edge.b)
-      if (!a || !b) return
-      ctx.beginPath()
-      if (edge.type === 'cross') {
-        ctx.strokeStyle = '#16a34a'
-        ctx.lineWidth = 1.4
-        ctx.setLineDash([4, 3])
-      } else {
-        ctx.strokeStyle = '#7c3aed'
-        ctx.lineWidth = 1.4
-        ctx.setLineDash([])
-      }
-      ctx.moveTo(a.x, a.y)
-      ctx.lineTo(b.x, b.y)
-      ctx.stroke()
-    })
-    ctx.setLineDash([])
-    nodes.forEach((node) => {
-      ctx.beginPath()
-      ctx.arc(node.x, node.y, 4, 0, Math.PI * 2)
-      if (node.type === 'facing') {
-        ctx.strokeStyle = nodeColor(node)
-        ctx.lineWidth = 1.6
-        ctx.stroke()
-      } else {
-        ctx.fillStyle = nodeColor(node)
-        ctx.fill()
-        ctx.strokeStyle = '#fff'
-        ctx.lineWidth = 1
-        ctx.stroke()
-      }
-    })
-    ctx.restore()
   }
 
   function pushHistory() {
@@ -327,28 +265,6 @@ export default function MapReviewPage() {
     rebuildMask()
     redraw()
   }
-  function onGenerateNodes() {
-    const walkable = walkableRef.current
-    const barriers = barrierRef.current
-    if (!walkable || !barriers || !dims) return
-    const effectiveMask = walkable.slice()
-    for (let index = 0; index < effectiveMask.length; index++) {
-      if (barriers[index]) effectiveMask[index] = 0
-    }
-    const scale = dims.w / DESIGN_W
-    const entrances: EntrancePoint[] = [
-      ...(beacons ?? [])
-        .filter((b) => b.type === 'connector' && b.x != null && b.y != null)
-        .map((b) => ({ x: (b.x as number) * scale, y: (b.y as number) * scale, kind: 'connector' as const })),
-      ...(landmarks ?? [])
-        .filter((l) => l.x != null && l.y != null)
-        .map((l) => ({ x: (l.x as number) * scale, y: (l.y as number) * scale, kind: 'landmark' as const })),
-    ]
-    const { nodes, edges } = generatePathNodes(effectiveMask, dims.w, dims.h, entrances)
-    pathNodesRef.current = nodes
-    pathEdgesRef.current = edges
-    redraw()
-  }
   function onSave() {
     const mask = maskCanvasRef.current
     const base = baseCanvasRef.current
@@ -414,10 +330,10 @@ export default function MapReviewPage() {
       <Breadcrumb items={crumbs} />
       <h1>지도 검수</h1>
       <div className="flex gap-6 items-start">
-        <div>
+        <div className="flex-1 min-w-0">
           <div
-            className="border border-line rounded-lg overflow-hidden bg-white"
-            style={{ width: dims?.w ?? CANVAS_W, cursor: 'crosshair' }}
+            className="w-full border border-line rounded-lg overflow-hidden bg-white"
+            style={{ cursor: 'crosshair' }}
           >
             {dims && (
               <canvas
@@ -429,7 +345,7 @@ export default function MapReviewPage() {
                 onMouseMove={onMouseMove}
                 onMouseUp={onMouseUp}
                 onMouseLeave={onMouseUp}
-                style={{ display: 'block' }}
+                style={{ display: 'block', width: '100%', height: 'auto' }}
               />
             )}
           </div>
@@ -437,17 +353,9 @@ export default function MapReviewPage() {
             영역을 <strong>클릭</strong>하면 통행 영역이 채워집니다. 출입구처럼 벽이 뚫려 밖으로 샐 때는{' '}
             <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요.
           </p>
-          <div className="flex flex-wrap gap-3 mt-2 text-[12px] text-muted">
-            <span style={{ color: '#7c3aed' }}>● 코너</span>
-            <span style={{ color: '#db2777' }}>● 벽 끝(오목)</span>
-            <span style={{ color: '#2563eb' }}>● 연결자 입구</span>
-            <span style={{ color: '#f2992e' }}>● 랜드마크 출입구</span>
-            <span>○ 맞은편 지점</span>
-            <span style={{ color: '#16a34a' }}>┄ 횡단 엣지</span>
-          </div>
         </div>
 
-        <Card className="w-[260px]">
+        <Card className="w-[260px] shrink-0">
           <h3>도구</h3>
           <div className="grid gap-2">
             {toolBtn('fill', '영역 채우기')}
@@ -478,17 +386,41 @@ export default function MapReviewPage() {
               전체 지우기
             </Button>
           </div>
-          <Button variant="outline" className="w-full mt-4" onClick={onGenerateNodes}>
-            경로 노드 설치
-          </Button>
-          <Button className="w-full mt-4" disabled={save.isPending} onClick={onSave}>
+          <Button
+            className="w-full mt-4"
+            disabled={save.isPending}
+            onClick={() => setConfirmSaveOpen(true)}
+          >
             {save.isPending ? '저장 중…' : '검수 완료 · 저장'}
           </Button>
           <p className="text-muted text-[13px] mt-3">
-            채운 영역이 경로탐색(A*)의 통행 가능 영역이 됩니다.
+            채운 영역이 경로탐색의 통행 가능 영역이 됩니다.
           </p>
         </Card>
       </div>
+
+      <StepFooter buildingId={buildingId} floorId={floorId} current="map" />
+
+      <Modal open={confirmSaveOpen} onClose={() => setConfirmSaveOpen(false)}>
+        <h2 style={{ marginTop: 0 }}>검수를 완료하시겠습니까?</h2>
+        <p style={{ color: '#8C99B3' }}>
+          현재까지 채운 통행 영역이 저장되며, 이후 경로탐색에 이 영역이 사용됩니다.
+        </p>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 }}>
+          <Button variant="outline" onClick={() => setConfirmSaveOpen(false)}>
+            취소
+          </Button>
+          <Button
+            disabled={save.isPending}
+            onClick={() => {
+              onSave()
+              setConfirmSaveOpen(false)
+            }}
+          >
+            확인
+          </Button>
+        </div>
+      </Modal>
     </div>
   )
 }
