@@ -72,9 +72,11 @@ export interface SignupRequest {
 ## 프론트 구조
 
 새 feature 모듈 `src/features/admin/`:
-- `types.ts` — `Admin`, 목록/승인/거절 관련 타입
+- `types.ts` — `Admin` 타입은 재정의하지 않고 `@/types/domain`에서 그대로 import해 사용. 이 파일엔 요청/응답 전용 타입만 추가 (예: `UpdateAdminStatusRequest { status: 'active' | 'rejected' }`). 목록 조회는 `Admin[]`을 그대로 반환하므로 별도 응답 타입 불필요
 - `api.ts` — 위 4개 엔드포인트 호출 함수
 - `hooks.ts` — `usePendingAdmins()`, `useApproveAdmin()`, `useRejectAdmin()`, `useCurrentAdmin()`
+
+다른 신규/수정 코드 전반에도 동일한 원칙 적용: 기존 타입(`Admin`, `AdminStatus`, `AdminRole` 등)과 기존 패턴(`readFileAsDataURL`, `ConfirmDialog`, `AsyncState`, react-hook-form+zod 폼 구조, PATCH 컨벤션 등)을 그대로 재사용하고, 동일한 타입·유틸을 새로 만들지 않는다.
 
 `readFileAsDataURL` 헬퍼를 `FloorplanUploadPage.tsx`에서 `src/lib/file.ts` 같은 공용 위치로 옮겨 `SignupPage`와 공유한다 (중복 제거).
 
