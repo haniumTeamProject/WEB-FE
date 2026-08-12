@@ -8,6 +8,7 @@ export function ConfirmDialog({
   description,
   confirmLabel = '삭제',
   cancelLabel = '취소',
+  confirmVariant = 'danger',
   pending,
   onConfirm,
   onCancel,
@@ -17,6 +18,7 @@ export function ConfirmDialog({
   description?: string
   confirmLabel?: string
   cancelLabel?: string
+  confirmVariant?: 'danger' | 'primary'
   pending?: boolean
   onConfirm: () => void
   onCancel: () => void
@@ -29,7 +31,7 @@ export function ConfirmDialog({
         <Button variant="outline" onClick={onCancel}>
           {cancelLabel}
         </Button>
-        <Button variant="danger" disabled={pending} onClick={onConfirm}>
+        <Button variant={confirmVariant} disabled={pending} onClick={onConfirm}>
           {confirmLabel}
         </Button>
       </div>

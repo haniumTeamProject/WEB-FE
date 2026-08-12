@@ -12,5 +12,6 @@ export interface SignupRequest {
   password: string
   name: string
   org: string // 소속 기관
-  // officialDoc(공문 파일)은 multipart 로 별도 전송
+  building: string // 담당 건물
+  officialDocUrl: string // 기관 공문(직인) — base64 data URL
 }
