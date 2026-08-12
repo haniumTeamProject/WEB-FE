@@ -77,18 +77,13 @@ export const db: {
     'suwon_ict-4': { floorId: 'suwon_ict-4', imageUrl: sampleFloorplan, extracted: true },
   },
   masks: {},
+  // 실제 도면으로 경로노드 테스트를 하는 층이라 데모 비콘/랜드마크를 심어두지 않는다 —
+  // 남겨두면 사용자가 아무것도 등록하지 않아도 경로노드 생성 시 "입구"로 잡혀 혼란을 준다.
   beacons: {
-    'suwon_ict-4': [
-      { id: 'bc_anchor', floorId: 'suwon_ict-4', name: '정문 앵커', mac: '44:B1:76:1A:13:B2', major: 104, minor: 1, type: 'semantic', x: 130, y: 470 },
-      { id: 'bc_cp1', floorId: 'suwon_ict-4', name: '중앙 갈림길', mac: 'E5:13:A2:92:71:00', major: 104, minor: 10, type: 'semantic', x: 430, y: 340 },
-      { id: 'bc_elv', floorId: 'suwon_ict-4', name: '엘베 앞', mac: 'C2:B6:13:0E:9C:BF', major: 104, minor: 20, type: 'semantic', connectorId: 'conn_elv1', x: 690, y: 110 },
-    ],
+    'suwon_ict-4': [],
   },
   landmarks: {
-    'suwon_ict-4': [
-      { id: 'lm_406', floorId: 'suwon_ict-4', name: '406호', type: 'room', x: 250, y: 180 },
-      { id: 'lm_wc', floorId: 'suwon_ict-4', name: '화장실(남)', type: 'restroom', x: 520, y: 440 },
-    ],
+    'suwon_ict-4': [],
   },
   admins: [
     {
