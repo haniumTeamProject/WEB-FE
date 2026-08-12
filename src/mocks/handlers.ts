@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import { db, nextId } from './db'
 import { majorForFloor } from '@/lib/utils'
-import type { Beacon, BeaconType, Building, Connector, Floor, Landmark, LandmarkType } from '@/types/domain'
+import type { Admin, Beacon, BeaconType, Building, Connector, Floor, Landmark, LandmarkType } from '@/types/domain'
 
 function floorMajor(floorId: string): number {
   for (const list of Object.values(db.floors)) {
@@ -22,7 +22,54 @@ const base = import.meta.env.VITE_API_BASE_URL ?? '/api'
 export const handlers = [
   // ---- 인증 ----
   http.post(`${base}/admin/auth/login`, () => HttpResponse.json({ accessToken: 'mock-token' })),
-  http.post(`${base}/admin/auth/signup`, () => new HttpResponse(null, { status: 201 })),
+
+  http.post(`${base}/admin/auth/signup`, async ({ request }) => {
+    const body = (await request.json()) as {
+      email: string
+      password: string
+      name: string
+      org: string
+      building: string
+      officialDocUrl: string
+    }
+    if (db.admins.some((a) => a.email === body.email)) {
+      return new HttpResponse(null, { status: 409 })
+    }
+    const admin: Admin = {
+      id: nextId('admin'),
+      email: body.email,
+      name: body.name,
+      org: body.org,
+      building: body.building,
+      status: 'pending',
+      role: 'admin',
+      officialDocUrl: body.officialDocUrl,
+      createdAt: new Date().toISOString(),
+    }
+    db.admins.push(admin)
+    return new HttpResponse(null, { status: 201 })
+  }),
+
+  http.get(`${base}/admin/me`, () => {
+    const superAdmin = db.admins.find((a) => a.role === 'super_admin')
+    return superAdmin ? HttpResponse.json(superAdmin) : new HttpResponse(null, { status: 404 })
+  }),
+
+  http.get(`${base}/admin/accounts`, ({ request }) => {
+    const url = new URL(request.url)
+    const status = url.searchParams.get('status')
+    const list = status ? db.admins.filter((a) => a.status === status) : db.admins
+    const sorted = [...list].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+    return HttpResponse.json(sorted)
+  }),
+
+  http.patch(`${base}/admin/accounts/:id`, async ({ params, request }) => {
+    const admin = db.admins.find((a) => a.id === params.id)
+    if (!admin) return new HttpResponse(null, { status: 404 })
+    const body = (await request.json()) as { status: 'active' | 'rejected' }
+    admin.status = body.status
+    return HttpResponse.json(admin)
+  }),
 
   // ---- 건물 ----
   http.get(`${base}/buildings`, () => HttpResponse.json(db.buildings)),
