@@ -20,6 +20,7 @@ const MapReviewPage = lazy(() => import('@/pages/map-editor/MapReviewPage'))
 const BeaconListPage = lazy(() => import('@/pages/beacons/BeaconListPage'))
 import BeaconEditPage from '@/pages/beacons/BeaconEditPage'
 const LandmarkPage = lazy(() => import('@/pages/landmarks/LandmarkPage'))
+import LandmarkEditPage from '@/pages/landmarks/LandmarkEditPage'
 const PathNodePage = lazy(() => import('@/pages/pathnodes/PathNodePage'))
 import AccountApprovalPage from '@/pages/admin/AccountApprovalPage'
 import GuidelinesPage from '@/pages/guidelines/GuidelinesPage'
@@ -80,6 +81,7 @@ export const router = createBrowserRouter([
           </Suspense>
         ),
       },
+      { path: '/buildings/:buildingId/floors/:floorId/landmarks/:landmarkId', element: <LandmarkEditPage /> },
       {
         path: '/buildings/:buildingId/floors/:floorId/path-nodes',
         element: (

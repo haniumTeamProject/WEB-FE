@@ -215,6 +215,8 @@ export const handlers = [
       connectorId?: string
       x?: number
       y?: number
+      sourceUid?: string
+      sourceLabel?: string
     }
     const beacon: Beacon = {
       id: nextId('bc'),
@@ -228,6 +230,8 @@ export const handlers = [
       isAnchor: body.type === 'anchor',
       x: body.x,
       y: body.y,
+      sourceUid: body.sourceUid,
+      sourceLabel: body.sourceLabel,
     }
     db.beacons[floorId] = [...(db.beacons[floorId] ?? []), beacon]
     bumpFloorStatus(floorId, 'beacon_missing', 'ready')
@@ -263,6 +267,8 @@ export const handlers = [
       type: LandmarkType
       x?: number
       y?: number
+      sourceUid?: string
+      sourceLabel?: string
     }
     const lm: Landmark = {
       id: nextId('lm'),
@@ -271,6 +277,8 @@ export const handlers = [
       type: body.type,
       x: body.x,
       y: body.y,
+      sourceUid: body.sourceUid,
+      sourceLabel: body.sourceLabel,
     }
     db.landmarks[floorId] = [...(db.landmarks[floorId] ?? []), lm]
     return HttpResponse.json(lm, { status: 201 })

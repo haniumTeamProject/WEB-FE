@@ -2,8 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { Stage, Layer, Image as KonvaImage, Circle, Text } from 'react-konva'
 import { useFloorplan } from '@/features/floorplan/hooks'
-
-const DESIGN_W = 900 // 좌표 기준 폭
+import { MAP_DESIGN_W as DESIGN_W } from '@/lib/constants'
 
 export interface MapPoint {
   id: string

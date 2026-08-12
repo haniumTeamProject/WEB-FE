@@ -4,6 +4,9 @@ import type { BeaconType, FloorSetupStatus, LandmarkType } from '@/types/domain'
 export const NAVY = '#3B5AA8'
 export const PRIMARY = '#4B70E5'
 
+// 설계도 좌표 기준 폭 — FloorMapCanvas와 지도 데이터 가져오기(mapImport)가 공유
+export const MAP_DESIGN_W = 900
+
 // 비콘 타입 — 지도 위 점 색과 폼의 타입 select가 동일한 색을 쓰도록 한 곳에서 관리
 export const BEACON_TYPE_LABEL: Record<BeaconType, string> = {
   anchor: '앵커',

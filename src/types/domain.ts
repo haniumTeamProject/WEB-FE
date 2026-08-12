@@ -67,6 +67,8 @@ export interface Beacon {
   isAnchor: boolean
   x?: number // 설계도 좌표(900 기준)
   y?: number
+  sourceUid?: string // map-tool(iframe) 원본 고유 id — 재가져오기 매칭 키
+  sourceLabel?: string // map-tool 표시 라벨 (예: B3)
 }
 
 export interface Floorplan {
@@ -85,4 +87,6 @@ export interface Landmark {
   visualTagId?: string // 시각태그 연결
   x?: number // 설계도 좌표(900 기준)
   y?: number
+  sourceUid?: string // map-tool(iframe) 원본 고유 id — 재가져오기 매칭 키
+  sourceLabel?: string // map-tool 표시 라벨 (예: L01)
 }

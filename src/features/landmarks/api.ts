@@ -6,9 +6,17 @@ export interface CreateLandmarkInput {
   type: LandmarkType
   x?: number
   y?: number
+  sourceUid?: string
+  sourceLabel?: string
 }
 
-export type UpdateLandmarkInput = Partial<{ name: string; type: LandmarkType; x: number; y: number }>
+export type UpdateLandmarkInput = Partial<{
+  name: string
+  type: LandmarkType
+  x: number
+  y: number
+  sourceLabel: string
+}>
 
 export async function fetchLandmarks(floorId: string): Promise<Landmark[]> {
   const { data } = await apiClient.get<Landmark[]>(`/floors/${floorId}/landmarks`)

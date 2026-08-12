@@ -9,6 +9,8 @@ export interface CreateBeaconInput {
   connectorId?: string
   x?: number
   y?: number
+  sourceUid?: string
+  sourceLabel?: string
 }
 
 export type UpdateBeaconInput = Partial<{
@@ -19,6 +21,7 @@ export type UpdateBeaconInput = Partial<{
   connectorId?: string
   x: number
   y: number
+  sourceLabel: string
 }>
 
 export async function fetchBeacons(floorId: string): Promise<Beacon[]> {
