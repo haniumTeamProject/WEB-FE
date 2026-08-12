@@ -166,7 +166,7 @@ export default function PathNodePage() {
       const maskScale = dims.w / DESIGN_W
       const entrances: EntrancePoint[] = [
         ...(beacons ?? [])
-          .filter((b) => b.type === 'connector' && b.x != null && b.y != null)
+          .filter((b) => b.type === 'semantic' && b.connectorId != null && b.x != null && b.y != null)
           .map((b) => ({ x: (b.x as number) * maskScale, y: (b.y as number) * maskScale, kind: 'connector' as const })),
         ...(landmarks ?? [])
           .filter((l) => l.x != null && l.y != null)

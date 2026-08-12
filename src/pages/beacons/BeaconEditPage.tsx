@@ -119,7 +119,7 @@ function BeaconEditForm({
       mac: mac.trim() || undefined,
       minor: Number(minor),
       type,
-      connectorId: type === 'connector' ? connectorId || undefined : undefined,
+      connectorId: type === 'semantic' ? connectorId || undefined : undefined,
     })
   }
 
@@ -138,9 +138,9 @@ function BeaconEditForm({
           <Input label="minor" type="number" value={minor} onChange={(e) => setMinor(e.target.value)} />
         </div>
         <ColorSelect label="타입" value={type} onChange={setType} options={TYPE_OPTIONS} />
-        {type === 'connector' && (
+        {type === 'semantic' && (
           <label className="block">
-            <span className="block text-[13px] text-muted mb-2">연결자</span>
+            <span className="block text-[13px] text-muted mb-2">수직연결자 (해당 시)</span>
             <select
               value={connectorId}
               onChange={(e) => setConnectorId(e.target.value)}

@@ -18,10 +18,12 @@ export function FloorMapCanvas({
   floorId,
   points,
   onMove,
+  onCanvasClick,
 }: {
   floorId: string
   points: MapPoint[]
   onMove?: (id: string, x: number, y: number) => void
+  onCanvasClick?: (x: number, y: number) => void
 }) {
   const { data: floorplan } = useFloorplan(floorId)
   const [loadedImg, setLoadedImg] = useState<{ url: string; image: HTMLImageElement } | null>(null)
@@ -55,6 +57,16 @@ export function FloorMapCanvas({
   const scale = width / DESIGN_W
   const H = displayImg ? Math.round((displayImg.height / displayImg.width) * width) : Math.round(560 * scale)
 
+  // 기존 점(드래그) 클릭은 무시하고, 빈 배경을 클릭했을 때만 배치 좌표로 알린다.
+  function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
+    if (!onCanvasClick) return
+    const stage = e.target.getStage()
+    if (!stage || e.target !== stage) return
+    const pos = stage.getPointerPosition()
+    if (!pos) return
+    onCanvasClick(Math.round(pos.x / scale), Math.round(pos.y / scale))
+  }
+
   if (!floorplan) {
     return (
       <div
@@ -68,8 +80,12 @@ export function FloorMapCanvas({
   }
 
   return (
-    <div ref={containerRef} className="w-full border border-line rounded-lg overflow-hidden bg-white">
-      <Stage width={width} height={H}>
+    <div
+      ref={containerRef}
+      className="w-full border border-line rounded-lg overflow-hidden bg-white"
+      style={{ cursor: onCanvasClick ? 'crosshair' : undefined }}
+    >
+      <Stage width={width} height={H} onClick={handleStageClick}>
         <Layer listening={false}>{displayImg && <KonvaImage image={displayImg} width={width} height={H} />}</Layer>
         <Layer>
           {points.map((p) => (

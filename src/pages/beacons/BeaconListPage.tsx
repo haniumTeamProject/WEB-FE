@@ -31,6 +31,7 @@ const TYPE_OPTIONS = (Object.keys(TYPE_LABEL) as BeaconType[]).map((value) => ({
   color: TYPE_COLOR[value],
 }))
 const CONNECTOR_TYPE_LABEL: Record<ConnectorType, string> = { elevator: '엘리베이터', stairs: '계단' }
+const PENDING_ID = '__pending__'
 
 export default function BeaconListPage() {
   const { buildingId = '', floorId = '' } = useParams()
@@ -46,37 +47,39 @@ export default function BeaconListPage() {
   const [name, setName] = useState('')
   const [mac, setMac] = useState('')
   const [minor, setMinor] = useState('')
-  const [type, setType] = useState<BeaconType>('checkpoint')
+  const [type, setType] = useState<BeaconType>('semantic')
   const [connectorId, setConnectorId] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [importPlan, setImportPlan] = useState<ImportPlan<Beacon> | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
 
-  const valid = name.trim() !== '' && minor !== '' && Number.isInteger(Number(minor))
+  const valid = name.trim() !== '' && minor !== '' && Number.isInteger(Number(minor)) && !!pendingPos
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!valid) return
+    if (!valid || !pendingPos) return
     create.mutate(
       {
         name: name.trim(),
         mac: mac.trim() || undefined,
         minor: Number(minor),
         type,
-        connectorId: type === 'connector' ? connectorId || undefined : undefined,
-        x: 450,
-        y: 280,
+        connectorId: type === 'semantic' ? connectorId || undefined : undefined,
+        x: pendingPos.x,
+        y: pendingPos.y,
       },
       {
         onSuccess: () => {
           setName('')
           setMac('')
           setMinor('')
-          setType('checkpoint')
+          setType('semantic')
           setConnectorId('')
+          setPendingPos(null)
         },
       },
     )
@@ -109,7 +112,7 @@ export default function BeaconListPage() {
         await create.mutateAsync({
           name: source.label,
           minor: nextMinor++,
-          type: 'checkpoint',
+          type: 'semantic',
           sourceUid: source.uid,
           sourceLabel: source.label,
           x: source.x,
@@ -134,6 +137,15 @@ export default function BeaconListPage() {
   const points: MapPoint[] = (beacons ?? [])
     .filter((b) => b.x != null && b.y != null)
     .map((b) => ({ id: b.id, x: b.x as number, y: b.y as number, color: TYPE_COLOR[b.type], label: b.name }))
+  if (pendingPos) {
+    points.push({
+      id: PENDING_ID,
+      x: pendingPos.x,
+      y: pendingPos.y,
+      color: '#8C99B3',
+      label: name.trim() || '새 위치',
+    })
+  }
 
   const crumbs = [
     { label: '홈', to: '/' },
@@ -146,20 +158,23 @@ export default function BeaconListPage() {
   return (
     <div>
       <Breadcrumb items={crumbs} />
-      <h1>비콘·체크포인트 등록</h1>
+      <h1>비콘 등록</h1>
 
       <div className="flex gap-6 items-start">
         <div className="flex-1 min-w-0">
           <FloorMapCanvas
             floorId={floorId}
             points={points}
-            onMove={(id, x, y) => update.mutate({ beaconId: id, input: { x, y } })}
+            onMove={(id, x, y) => {
+              if (id === PENDING_ID) setPendingPos({ x, y })
+              else update.mutate({ beaconId: id, input: { x, y } })
+            }}
+            onCanvasClick={(x, y) => setPendingPos({ x, y })}
           />
           <div className="flex flex-wrap gap-4 mt-2 text-[13px] text-muted">
-            <span style={{ color: TYPE_COLOR.anchor }}>● 앵커</span>
-            <span style={{ color: TYPE_COLOR.checkpoint }}>● 체크포인트</span>
-            <span style={{ color: TYPE_COLOR.connector }}>● 연결자</span>
-            <span>· 점을 드래그해 위치 조정</span>
+            <span style={{ color: TYPE_COLOR.semantic }}>● 의미비콘</span>
+            <span style={{ color: TYPE_COLOR.reinforcement }}>● 보강비콘</span>
+            <span>· 지도를 클릭해 새 비콘 위치 지정 · 점을 드래그해 위치 조정</span>
           </div>
         </div>
 
@@ -183,9 +198,9 @@ export default function BeaconListPage() {
               <Input label="minor" type="number" placeholder="10" value={minor} onChange={(e) => setMinor(e.target.value)} />
             </div>
             <ColorSelect label="타입" value={type} onChange={setType} options={TYPE_OPTIONS} />
-            {type === 'connector' && (
+            {type === 'semantic' && (
               <label className="block">
-                <span className="block text-[13px] text-muted mb-2">연결자</span>
+                <span className="block text-[13px] text-muted mb-2">수직연결자 (해당 시)</span>
                 <select
                   value={connectorId}
                   onChange={(e) => setConnectorId(e.target.value)}
@@ -211,7 +226,9 @@ export default function BeaconListPage() {
             <Button type="submit" disabled={!valid || create.isPending}>
               비콘 추가
             </Button>
-            <p className="text-muted text-[13px]">추가 후 지도에서 점을 드래그해 위치를 잡으세요.</p>
+            <p className="text-muted text-[13px]">
+              {pendingPos ? '위치가 지정됐습니다. 점을 드래그해 조정할 수 있어요.' : '지도를 클릭해 배치할 위치를 먼저 지정하세요.'}
+            </p>
           </form>
         </Card>
       </div>

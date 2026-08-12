@@ -9,14 +9,12 @@ export const MAP_DESIGN_W = 900
 
 // 비콘 타입 — 지도 위 점 색과 폼의 타입 select가 동일한 색을 쓰도록 한 곳에서 관리
 export const BEACON_TYPE_LABEL: Record<BeaconType, string> = {
-  anchor: '앵커',
-  checkpoint: '체크포인트',
-  connector: '연결자',
+  semantic: '의미비콘',
+  reinforcement: '보강비콘',
 }
 export const BEACON_TYPE_COLOR: Record<BeaconType, string> = {
-  anchor: '#4B70E5',
-  checkpoint: '#29AD72',
-  connector: '#F2992E',
+  semantic: '#4B70E5',
+  reinforcement: '#29AD72',
 }
 
 // 랜드마크(목적지) 타입 — 마찬가지로 지도 색과 폼 select 색을 공유

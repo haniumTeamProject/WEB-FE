@@ -79,9 +79,9 @@ export const db: {
   masks: {},
   beacons: {
     'suwon_ict-4': [
-      { id: 'bc_anchor', floorId: 'suwon_ict-4', name: '정문 앵커', mac: '44:B1:76:1A:13:B2', major: 104, minor: 1, type: 'anchor', isAnchor: true, x: 130, y: 470 },
-      { id: 'bc_cp1', floorId: 'suwon_ict-4', name: '중앙 갈림길', mac: 'E5:13:A2:92:71:00', major: 104, minor: 10, type: 'checkpoint', isAnchor: false, x: 430, y: 340 },
-      { id: 'bc_elv', floorId: 'suwon_ict-4', name: '엘베 앞', mac: 'C2:B6:13:0E:9C:BF', major: 104, minor: 20, type: 'connector', connectorId: 'conn_elv1', isAnchor: false, x: 690, y: 110 },
+      { id: 'bc_anchor', floorId: 'suwon_ict-4', name: '정문 앵커', mac: '44:B1:76:1A:13:B2', major: 104, minor: 1, type: 'semantic', x: 130, y: 470 },
+      { id: 'bc_cp1', floorId: 'suwon_ict-4', name: '중앙 갈림길', mac: 'E5:13:A2:92:71:00', major: 104, minor: 10, type: 'semantic', x: 430, y: 340 },
+      { id: 'bc_elv', floorId: 'suwon_ict-4', name: '엘베 앞', mac: 'C2:B6:13:0E:9C:BF', major: 104, minor: 20, type: 'semantic', connectorId: 'conn_elv1', x: 690, y: 110 },
     ],
   },
   landmarks: {

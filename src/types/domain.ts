@@ -53,7 +53,9 @@ export interface Connector {
   floors: number[] // 운행 층
 }
 
-export type BeaconType = 'anchor' | 'checkpoint' | 'connector'
+// semantic(의미비콘): 앵커·코너·수직연결자입구·랜드마크출입구·복도끝 등 경로상 의미 있는 지점
+// reinforcement(보강비콘): 의미비콘 사이 간격이 D_max(6m)를 넘을 때 채워 넣는 비콘
+export type BeaconType = 'semantic' | 'reinforcement'
 
 export interface Beacon {
   id: string
@@ -63,8 +65,7 @@ export interface Beacon {
   major: number
   minor: number
   type: BeaconType
-  connectorId?: string // 엘베/계단일 때
-  isAnchor: boolean
+  connectorId?: string // 의미비콘이 수직연결자(엘베/계단) 입구 역할일 때만 설정
   x?: number // 설계도 좌표(900 기준)
   y?: number
   sourceUid?: string // map-tool(iframe) 원본 고유 id — 재가져오기 매칭 키

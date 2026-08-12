@@ -200,7 +200,7 @@ export const handlers = [
     return HttpResponse.json({ ok: true })
   }),
 
-  // ---- 비콘·체크포인트 ----
+  // ---- 비콘 ----
   http.get(`${base}/floors/:floorId/beacons`, ({ params }) =>
     HttpResponse.json(db.beacons[params.floorId as string] ?? []),
   ),
@@ -227,7 +227,6 @@ export const handlers = [
       minor: body.minor,
       type: body.type,
       connectorId: body.connectorId,
-      isAnchor: body.type === 'anchor',
       x: body.x,
       y: body.y,
       sourceUid: body.sourceUid,
@@ -243,7 +242,6 @@ export const handlers = [
     const b = list.find((x) => x.id === params.beaconId)
     if (!b) return new HttpResponse(null, { status: 404 })
     Object.assign(b, (await request.json()) as Partial<Beacon>)
-    b.isAnchor = b.type === 'anchor'
     return HttpResponse.json(b)
   }),
 
