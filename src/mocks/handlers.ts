@@ -275,7 +275,6 @@ export const handlers = [
       mac?: string
       minor: number
       type: BeaconType
-      connectorId?: string
       x?: number
       y?: number
       sourceUid?: string
@@ -289,7 +288,6 @@ export const handlers = [
       major: floorMajor(floorId),
       minor: body.minor,
       type: body.type,
-      connectorId: body.connectorId,
       x: body.x,
       y: body.y,
       sourceUid: body.sourceUid,

@@ -3,14 +3,13 @@ import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
-import { useConnectors } from '@/features/connectors/hooks'
 import {
   useBeacons,
   useCreateBeacon,
   useDeleteBeacon,
   useUpdateBeacon,
 } from '@/features/beacons/hooks'
-import type { Beacon, BeaconType, ConnectorType } from '@/types/domain'
+import type { Beacon, BeaconType } from '@/types/domain'
 import { FloorMapCanvas } from '@/components/map/FloorMapCanvas'
 import type { MapPoint } from '@/components/map/FloorMapCanvas'
 import { Card } from '@/components/ui/Card'
@@ -30,7 +29,6 @@ const TYPE_OPTIONS = (Object.keys(TYPE_LABEL) as BeaconType[]).map((value) => ({
   label: TYPE_LABEL[value],
   color: TYPE_COLOR[value],
 }))
-const CONNECTOR_TYPE_LABEL: Record<ConnectorType, string> = { elevator: '엘리베이터', stairs: '계단' }
 const PENDING_ID = '__pending__'
 
 export default function BeaconListPage() {
@@ -38,7 +36,6 @@ export default function BeaconListPage() {
   const { data: building } = useBuilding(buildingId)
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
-  const { data: connectors } = useConnectors(buildingId)
   const { data: beacons, isLoading: beaconsLoading, isError: beaconsError, refetch: refetchBeacons } = useBeacons(floorId)
   const create = useCreateBeacon(floorId)
   const update = useUpdateBeacon(floorId)
@@ -48,7 +45,6 @@ export default function BeaconListPage() {
   const [mac, setMac] = useState('')
   const [minor, setMinor] = useState('')
   const [type, setType] = useState<BeaconType>('semantic')
-  const [connectorId, setConnectorId] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null)
 
@@ -68,7 +64,6 @@ export default function BeaconListPage() {
         mac: mac.trim() || undefined,
         minor: Number(minor),
         type,
-        connectorId: type === 'semantic' ? connectorId || undefined : undefined,
         x: pendingPos.x,
         y: pendingPos.y,
       },
@@ -78,7 +73,6 @@ export default function BeaconListPage() {
           setMac('')
           setMinor('')
           setType('semantic')
-          setConnectorId('')
           setPendingPos(null)
         },
       },
@@ -198,31 +192,6 @@ export default function BeaconListPage() {
               <Input label="minor" type="number" placeholder="10" value={minor} onChange={(e) => setMinor(e.target.value)} />
             </div>
             <ColorSelect label="타입" value={type} onChange={setType} options={TYPE_OPTIONS} />
-            {type === 'semantic' && (
-              <label className="block">
-                <span className="block text-[13px] text-muted mb-2">수직연결자 (해당 시)</span>
-                <select
-                  value={connectorId}
-                  onChange={(e) => setConnectorId(e.target.value)}
-                  className="w-full h-12 px-4 rounded-lg border border-[#DEE2EB] bg-field text-sm"
-                >
-                  <option value="">— 선택 —</option>
-                  {(['elevator', 'stairs'] as ConnectorType[]).map((connectorType) => {
-                    const options = connectors?.filter((c) => c.type === connectorType) ?? []
-                    if (options.length === 0) return null
-                    return (
-                      <optgroup key={connectorType} label={CONNECTOR_TYPE_LABEL[connectorType]}>
-                        {options.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )
-                  })}
-                </select>
-              </label>
-            )}
             <Button type="submit" disabled={!valid || create.isPending}>
               비콘 추가
             </Button>
@@ -269,7 +238,6 @@ export default function BeaconListPage() {
                 )}
                 <span className="text-[13px] text-muted">
                   {b.mac ? `${b.mac} · ` : ''}major {b.major} · minor {b.minor} · {TYPE_LABEL[b.type]}
-                  {b.connectorId ? ` · ${connectors?.find((c) => c.id === b.connectorId)?.name ?? b.connectorId}` : ''}
                 </span>
               </div>
               <div className="flex gap-2">
@@ -310,7 +278,7 @@ export default function BeaconListPage() {
         title="지도 데이터를 가져올까요?"
         description={
           importPlan
-            ? `생성 ${importPlan.toCreate.length} · 갱신 ${importPlan.toUpdate.length} · 삭제 ${importPlan.toDelete.length} — 기존에 입력한 이름·MAC·연결자는 유지됩니다.`
+            ? `생성 ${importPlan.toCreate.length} · 갱신 ${importPlan.toUpdate.length} · 삭제 ${importPlan.toDelete.length} — 기존에 입력한 이름·MAC은 유지됩니다.`
             : undefined
         }
         confirmLabel="가져오기"

@@ -6,7 +6,6 @@ export interface CreateBeaconInput {
   mac?: string
   minor: number
   type: BeaconType
-  connectorId?: string
   x?: number
   y?: number
   sourceUid?: string
@@ -18,7 +17,6 @@ export type UpdateBeaconInput = Partial<{
   mac: string
   minor: number
   type: BeaconType
-  connectorId?: string
   x: number
   y: number
   sourceLabel: string

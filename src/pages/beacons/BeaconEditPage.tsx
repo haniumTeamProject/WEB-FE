@@ -3,8 +3,7 @@ import type { FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useBeacons, useDeleteBeacon, useUpdateBeacon } from '@/features/beacons/hooks'
-import { useConnectors } from '@/features/connectors/hooks'
-import type { Beacon, BeaconType, Connector, ConnectorType } from '@/types/domain'
+import type { Beacon, BeaconType } from '@/types/domain'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
@@ -14,7 +13,6 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ColorSelect } from '@/components/ui/ColorSelect'
 import { BEACON_TYPE_COLOR, BEACON_TYPE_LABEL } from '@/lib/constants'
 
-const CONNECTOR_TYPE_LABEL: Record<ConnectorType, string> = { elevator: '엘리베이터', stairs: '계단' }
 const TYPE_OPTIONS = (Object.keys(BEACON_TYPE_LABEL) as BeaconType[]).map((value) => ({
   value,
   label: BEACON_TYPE_LABEL[value],
@@ -26,7 +24,6 @@ export default function BeaconEditPage() {
   const navigate = useNavigate()
   const { data: building } = useBuilding(buildingId)
   const { data: beacons, isLoading, isError, refetch } = useBeacons(floorId)
-  const { data: connectors } = useConnectors(buildingId)
   const update = useUpdateBeacon(floorId)
   const del = useDeleteBeacon(floorId)
   const beacon = beacons?.find((b) => b.id === beaconId)
@@ -71,7 +68,6 @@ export default function BeaconEditPage() {
       <BeaconEditForm
         key={beacon.id}
         beacon={beacon}
-        connectors={connectors}
         onSubmit={(input) => update.mutate({ beaconId, input }, { onSuccess: () => navigate(backTo) })}
         onDelete={() => del.mutate(beaconId, { onSuccess: () => navigate(backTo) })}
         onCancel={() => navigate(backTo)}
@@ -84,7 +80,6 @@ export default function BeaconEditPage() {
 
 function BeaconEditForm({
   beacon,
-  connectors,
   onSubmit,
   onDelete,
   onCancel,
@@ -92,13 +87,11 @@ function BeaconEditForm({
   deleting,
 }: {
   beacon: Beacon
-  connectors: Connector[] | undefined
   onSubmit: (input: {
     name: string
     mac: string | undefined
     minor: number
     type: BeaconType
-    connectorId: string | undefined
   }) => void
   onDelete: () => void
   onCancel: () => void
@@ -109,7 +102,6 @@ function BeaconEditForm({
   const [mac, setMac] = useState(beacon.mac ?? '')
   const [minor, setMinor] = useState(String(beacon.minor))
   const [type, setType] = useState<BeaconType>(beacon.type)
-  const [connectorId, setConnectorId] = useState(beacon.connectorId ?? '')
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
   function handleSubmit(e: FormEvent) {
@@ -119,7 +111,6 @@ function BeaconEditForm({
       mac: mac.trim() || undefined,
       minor: Number(minor),
       type,
-      connectorId: type === 'semantic' ? connectorId || undefined : undefined,
     })
   }
 
@@ -138,31 +129,6 @@ function BeaconEditForm({
           <Input label="minor" type="number" value={minor} onChange={(e) => setMinor(e.target.value)} />
         </div>
         <ColorSelect label="타입" value={type} onChange={setType} options={TYPE_OPTIONS} />
-        {type === 'semantic' && (
-          <label className="block">
-            <span className="block text-[13px] text-muted mb-2">수직연결자 (해당 시)</span>
-            <select
-              value={connectorId}
-              onChange={(e) => setConnectorId(e.target.value)}
-              className="w-full h-12 px-4 rounded-lg border border-[#DEE2EB] bg-field text-sm"
-            >
-              <option value="">— 선택 —</option>
-              {(['elevator', 'stairs'] as ConnectorType[]).map((connectorType) => {
-                const options = connectors?.filter((c) => c.type === connectorType) ?? []
-                if (options.length === 0) return null
-                return (
-                  <optgroup key={connectorType} label={CONNECTOR_TYPE_LABEL[connectorType]}>
-                    {options.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )
-              })}
-            </select>
-          </label>
-        )}
         <div className="flex gap-3">
           <Button type="submit" disabled={submitting}>
             저장
