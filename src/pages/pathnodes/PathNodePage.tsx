@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Konva from 'konva'
 import { Stage, Layer, Image as KonvaImage, Circle, Line } from 'react-konva'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
 import { useMask } from '@/features/mapEditor/hooks'
-import { useBeacons } from '@/features/beacons/hooks'
+import { useConnectors } from '@/features/connectors/hooks'
 import { useLandmarks } from '@/features/landmarks/hooks'
 import { generatePathNodes } from '@/features/mapEditor/pathNodes'
 import type { EntrancePoint, PathEdge, PathNode } from '@/features/mapEditor/pathNodes'
@@ -74,12 +74,13 @@ function decodeMask(dataUrl: string, w: number, h: number): Promise<Uint8Array> 
 // 지도 검수 단계와 분리된 별도 페이지 — 이동 결과는 층 ID 기준 localStorage에 저장(백엔드 저장은 추후 작업).
 export default function PathNodePage() {
   const { buildingId = '', floorId = '' } = useParams()
+  const navigate = useNavigate()
   const { data: building } = useBuilding(buildingId)
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
   const { data: floorplan, isLoading } = useFloorplan(floorId)
   const { data: savedMask } = useMask(floorId)
-  const { data: beacons } = useBeacons(floorId)
+  const { data: connectors } = useConnectors(buildingId)
   const { data: landmarks } = useLandmarks(floorId)
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -165,9 +166,9 @@ export default function PathNodePage() {
       const mask = await decodeMask(savedMask.dataUrl, dims.w, dims.h)
       const maskScale = dims.w / DESIGN_W
       const entrances: EntrancePoint[] = [
-        ...(beacons ?? [])
-          .filter((b) => b.type === 'semantic' && b.connectorId != null && b.x != null && b.y != null)
-          .map((b) => ({ x: (b.x as number) * maskScale, y: (b.y as number) * maskScale, kind: 'connector' as const })),
+        ...(connectors ?? [])
+          .flatMap((c) => c.positions?.filter((p) => p.floorId === floorId) ?? [])
+          .map((p) => ({ x: p.x * maskScale, y: p.y * maskScale, kind: 'connector' as const })),
         ...(landmarks ?? [])
           .filter((l) => l.x != null && l.y != null)
           .map((l) => ({ x: (l.x as number) * maskScale, y: (l.y as number) * maskScale, kind: 'landmark' as const })),
@@ -343,7 +344,16 @@ export default function PathNodePage() {
         </Card>
       </div>
 
-      <StepFooter buildingId={buildingId} floorId={floorId} current="path-nodes" />
+      <StepFooter
+        buildingId={buildingId}
+        floorId={floorId}
+        current="path-nodes"
+        saveAction={{
+          label: '저장',
+          disabled: nodes.length === 0,
+          onClick: () => navigate(`/buildings/${buildingId}`),
+        }}
+      />
     </div>
   )
 }
