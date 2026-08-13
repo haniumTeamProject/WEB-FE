@@ -27,8 +27,8 @@ function computeFloorStatus(floorId: string): FloorSetupStatus {
   const floor = buildingId ? db.floors[buildingId].find((f) => f.id === floorId) : undefined
   if (buildingId && floor) {
     const connectorsForFloor = (db.connectors[buildingId] ?? []).filter((c) => c.floors.includes(floor.floor))
-    const boundConnectorIds = new Set(beacons.map((b) => b.connectorId).filter((id): id is string => !!id))
-    if (connectorsForFloor.some((c) => !boundConnectorIds.has(c.id))) return 'connector_missing'
+    const missing = connectorsForFloor.some((c) => !c.positions?.some((p) => p.floorId === floorId))
+    if (missing) return 'connector_missing'
   }
   return 'ready'
 }
@@ -206,6 +206,32 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 })
   }),
+
+  http.put(
+    `${base}/buildings/:buildingId/connectors/:connectorId/positions/:floorId`,
+    async ({ params, request }) => {
+      const { buildingId, connectorId, floorId } = params as Record<string, string>
+      const body = (await request.json()) as { x: number; y: number }
+      const list = db.connectors[buildingId]
+      const connector = list?.find((c) => c.id === connectorId)
+      if (!connector) return new HttpResponse(null, { status: 404 })
+      const positions = (connector.positions ?? []).filter((p) => p.floorId !== floorId)
+      connector.positions = [...positions, { floorId, x: body.x, y: body.y }]
+      return HttpResponse.json(connector)
+    },
+  ),
+
+  http.delete(
+    `${base}/buildings/:buildingId/connectors/:connectorId/positions/:floorId`,
+    ({ params }) => {
+      const { buildingId, connectorId, floorId } = params as Record<string, string>
+      const list = db.connectors[buildingId]
+      const connector = list?.find((c) => c.id === connectorId)
+      if (!connector) return new HttpResponse(null, { status: 404 })
+      connector.positions = (connector.positions ?? []).filter((p) => p.floorId !== floorId)
+      return HttpResponse.json(connector)
+    },
+  ),
 
   // ---- 설계도(Floorplan) ----
   http.get(`${base}/floors/:floorId/floorplan`, ({ params }) =>

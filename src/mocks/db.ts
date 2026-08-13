@@ -68,7 +68,7 @@ export const db: {
   },
   connectors: {
     suwon_ict: [
-      { id: 'conn_elv1', buildingId: 'suwon_ict', name: '엘리베이터 1호기', type: 'elevator', floors: [4] },
+      { id: 'conn_elv1', buildingId: 'suwon_ict', name: '엘리베이터 1호기', type: 'elevator', floors: [4], positions: [] },
     ],
   },
   floorplans: {
