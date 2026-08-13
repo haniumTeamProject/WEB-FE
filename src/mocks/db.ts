@@ -39,6 +39,7 @@ export const db: {
   landmarks: Record<string, Landmark[]>
   admins: Admin[]
 } = {
+  // status는 더 이상 시드로 넣지 않는다 — mocks/handlers.ts가 매 조회마다 실제 데이터(설계도·마스크·비콘·연결자)로부터 계산해 내려준다.
   buildings: [
     {
       id: 'suwon_ict',
@@ -47,14 +48,12 @@ export const db: {
       address: '경기도 화성시 봉담읍 와우안길 17',
       floorCount: 1,
       favorite: true,
-      status: 'ready',
     },
     {
       id: 'ku_gyeongsang',
       code: 'ku_gyeongsang',
       name: '고려대 세종캠퍼스 / 경상대학',
       floorCount: 3,
-      status: 'review_needed',
     },
     {
       id: 'bundang_cha',
@@ -62,11 +61,10 @@ export const db: {
       name: '분당차병원(본관)',
       floorCount: 5,
       favorite: true,
-      status: 'beacon_missing',
     },
   ],
   floors: {
-    suwon_ict: [{ id: 'suwon_ict-4', buildingId: 'suwon_ict', floor: 4, major: 104, status: 'ready' }],
+    suwon_ict: [{ id: 'suwon_ict-4', buildingId: 'suwon_ict', floor: 4, major: 104 }],
   },
   connectors: {
     suwon_ict: [

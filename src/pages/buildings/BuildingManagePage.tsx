@@ -53,11 +53,10 @@ export default function BuildingManagePage() {
           </Card>
         ))}
         {data && data.length === 0 && (
-          <AsyncState
-            status="empty"
-            title="등록된 건물이 없습니다."
-            action={<Button onClick={() => navigate('/buildings/new')}>건물 등록</Button>}
-          />
+          <div className="text-center py-10">
+            <p className="font-semibold text-ink">등록된 건물이 없습니다.</p>
+            <p className="text-sm text-muted mt-1">우측 상단 '건물 등록' 버튼을 이용하여 건물을 추가하세요.</p>
+          </div>
         )}
       </div>
 

@@ -1,17 +1,17 @@
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 
-export type StepKey = 'floorplan' | 'map' | 'beacons' | 'landmarks' | 'path-nodes'
+export type StepKey = 'floorplan' | 'map' | 'landmarks' | 'beacons' | 'path-nodes'
 
 const STEPS: { key: StepKey; label: string }[] = [
   { key: 'floorplan', label: '설계도' },
   { key: 'map', label: '지도 검수' },
-  { key: 'beacons', label: '비콘' },
   { key: 'landmarks', label: '목적지' },
+  { key: 'beacons', label: '비콘' },
   { key: 'path-nodes', label: '경로노드' },
 ]
 
-// 설계도→지도검수→비콘→목적지→경로노드, 5단계 공통 이전/다음 단계 이동 버튼.
+// 설계도→지도검수→목적지→비콘→경로노드, 5단계 공통 이전/다음 단계 이동 버튼.
 export function StepFooter({
   buildingId,
   floorId,

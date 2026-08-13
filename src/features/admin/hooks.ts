@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchCurrentAdmin, fetchPendingAdmins, updateAdminStatus } from './api'
+import { fetchCurrentAdmin, fetchPendingAdmins, updateAdminStatus, updateCurrentAdmin } from './api'
+
+const currentAdminKey = ['admin', 'me']
 
 const pendingKey = ['admin', 'accounts', 'pending']
 
@@ -24,5 +26,13 @@ export function useRejectAdmin() {
 }
 
 export function useCurrentAdmin() {
-  return useQuery({ queryKey: ['admin', 'me'], queryFn: fetchCurrentAdmin })
+  return useQuery({ queryKey: currentAdminKey, queryFn: fetchCurrentAdmin })
+}
+
+export function useUpdateCurrentAdmin() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: updateCurrentAdmin,
+    onSuccess: () => qc.invalidateQueries({ queryKey: currentAdminKey }),
+  })
 }

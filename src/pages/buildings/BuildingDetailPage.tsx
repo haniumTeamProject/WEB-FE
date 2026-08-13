@@ -67,14 +67,14 @@ export default function BuildingDetailPage() {
                     지도 검수
                   </Button>
                 </Link>
-                <Link to={`/buildings/${buildingId}/floors/${f.id}/beacons`}>
-                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
-                    비콘
-                  </Button>
-                </Link>
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/landmarks`}>
                   <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
                     목적지
+                  </Button>
+                </Link>
+                <Link to={`/buildings/${buildingId}/floors/${f.id}/beacons`}>
+                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                    비콘
                   </Button>
                 </Link>
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/path-nodes`}>

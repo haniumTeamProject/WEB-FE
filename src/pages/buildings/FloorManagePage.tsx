@@ -106,7 +106,7 @@ export default function FloorManagePage() {
       <ConfirmDialog
         open={!!deleteTarget}
         title="층을 삭제할까요?"
-        description={`'${deleteTarget?.label}' — 삭제하면 되돌릴 수 없습니다. 이 층의 설계도·지도 검수·비콘·목적지·경로노드가 모두 삭제됩니다.`}
+        description={`'${deleteTarget?.label}' — 삭제하면 되돌릴 수 없습니다. 이 층의 설계도·지도 검수·목적지·비콘·경로노드가 모두 삭제됩니다.`}
         pending={deleteFloor.isPending}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => {

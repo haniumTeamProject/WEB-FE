@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import { db, nextId } from './db'
 import { majorForFloor } from '@/lib/utils'
-import type { Admin, Beacon, BeaconType, Building, Connector, Floor, Landmark, LandmarkType } from '@/types/domain'
+import type { Admin, Beacon, BeaconType, Building, Connector, Floor, FloorSetupStatus, Landmark, LandmarkType } from '@/types/domain'
 
 function floorMajor(floorId: string): number {
   for (const list of Object.values(db.floors)) {
@@ -10,11 +10,44 @@ function floorMajor(floorId: string): number {
   }
   return 0
 }
-function bumpFloorStatus(floorId: string, from: Floor['status'], to: Floor['status']) {
-  for (const list of Object.values(db.floors)) {
-    const f = list.find((x) => x.id === floorId)
-    if (f && f.status === from) f.status = to
+
+function findBuildingIdForFloor(floorId: string): string | undefined {
+  return Object.keys(db.floors).find((buildingId) => db.floors[buildingId].some((f) => f.id === floorId))
+}
+
+// 정책 2.3: 층 세팅 상태는 저장해두고 수동으로 갱신하는 대신, 매 조회마다 실제 데이터로부터 계산한다 —
+// 그래야 비콘 삭제처럼 "되돌아가는" 변경도 상태에 항상 정확히 반영된다.
+function computeFloorStatus(floorId: string): FloorSetupStatus {
+  if (!db.floorplans[floorId]) return 'floorplan_missing'
+  if (!db.masks[floorId]) return 'review_needed'
+  const beacons = db.beacons[floorId] ?? []
+  if (beacons.length === 0) return 'beacon_missing'
+
+  const buildingId = findBuildingIdForFloor(floorId)
+  const floor = buildingId ? db.floors[buildingId].find((f) => f.id === floorId) : undefined
+  if (buildingId && floor) {
+    const connectorsForFloor = (db.connectors[buildingId] ?? []).filter((c) => c.floors.includes(floor.floor))
+    const boundConnectorIds = new Set(beacons.map((b) => b.connectorId).filter((id): id is string => !!id))
+    if (connectorsForFloor.some((c) => !boundConnectorIds.has(c.id))) return 'connector_missing'
   }
+  return 'ready'
+}
+
+const FLOOR_STATUS_PROGRESS: FloorSetupStatus[] = [
+  'floorplan_missing',
+  'review_needed',
+  'beacon_missing',
+  'connector_missing',
+  'ready',
+]
+
+// 건물 대표 상태 = 그 건물 층 중 가장 진행이 덜 된 상태 (층이 하나도 없으면 설계도 미업로드 취급)
+function computeBuildingStatus(buildingId: string): FloorSetupStatus {
+  const floors = db.floors[buildingId] ?? []
+  if (floors.length === 0) return 'floorplan_missing'
+  return floors
+    .map((f) => computeFloorStatus(f.id))
+    .reduce((worst, s) => (FLOOR_STATUS_PROGRESS.indexOf(s) < FLOOR_STATUS_PROGRESS.indexOf(worst) ? s : worst))
 }
 
 const base = import.meta.env.VITE_API_BASE_URL ?? '/api'
@@ -55,6 +88,14 @@ export const handlers = [
     return superAdmin ? HttpResponse.json(superAdmin) : new HttpResponse(null, { status: 404 })
   }),
 
+  http.patch(`${base}/admin/me`, async ({ request }) => {
+    const superAdmin = db.admins.find((a) => a.role === 'super_admin')
+    if (!superAdmin) return new HttpResponse(null, { status: 404 })
+    const body = (await request.json()) as { name?: string; email?: string; org?: string }
+    Object.assign(superAdmin, body)
+    return HttpResponse.json(superAdmin)
+  }),
+
   http.get(`${base}/admin/accounts`, ({ request }) => {
     const url = new URL(request.url)
     const status = url.searchParams.get('status')
@@ -72,7 +113,9 @@ export const handlers = [
   }),
 
   // ---- 건물 ----
-  http.get(`${base}/buildings`, () => HttpResponse.json(db.buildings)),
+  http.get(`${base}/buildings`, () =>
+    HttpResponse.json(db.buildings.map((b) => ({ ...b, status: computeBuildingStatus(b.id) }))),
+  ),
 
   http.post(`${base}/buildings`, async ({ request }) => {
     const body = (await request.json()) as Partial<Building>
@@ -82,7 +125,6 @@ export const handlers = [
       name: body.name ?? '',
       address: body.address,
       floorCount: body.floorCount ?? 0,
-      status: 'floorplan_missing',
     }
     db.buildings.push(building)
     db.floors[building.id] = []
@@ -91,7 +133,7 @@ export const handlers = [
 
   http.get(`${base}/buildings/:id`, ({ params }) => {
     const b = db.buildings.find((x) => x.id === params.id)
-    return b ? HttpResponse.json(b) : new HttpResponse(null, { status: 404 })
+    return b ? HttpResponse.json({ ...b, status: computeBuildingStatus(b.id) }) : new HttpResponse(null, { status: 404 })
   }),
 
   http.patch(`${base}/buildings/:id`, async ({ params, request }) => {
@@ -110,7 +152,9 @@ export const handlers = [
 
   // ---- 층 ----
   http.get(`${base}/buildings/:id/floors`, ({ params }) =>
-    HttpResponse.json(db.floors[params.id as string] ?? []),
+    HttpResponse.json(
+      (db.floors[params.id as string] ?? []).map((f) => ({ ...f, status: computeFloorStatus(f.id) })),
+    ),
   ),
 
   http.post(`${base}/buildings/:id/floors`, async ({ params, request }) => {
@@ -121,7 +165,6 @@ export const handlers = [
       buildingId,
       floor: body.floor,
       major: majorForFloor(body.floor),
-      status: 'floorplan_missing',
     }
     db.floors[buildingId] = [...(db.floors[buildingId] ?? []), floor].sort(
       (a, b) => a.floor - b.floor,
@@ -175,11 +218,6 @@ export const handlers = [
     // 실제 서버는 여기서 벽·이동영역을 자동 추출. mock은 즉시 완료 처리.
     const fp = { floorId, imageUrl: body.imageUrl, extracted: true }
     db.floorplans[floorId] = fp
-    // 층 상태: 설계도 미업로드 → 검수 필요
-    for (const list of Object.values(db.floors)) {
-      const f = list.find((x) => x.id === floorId)
-      if (f && f.status === 'floorplan_missing') f.status = 'review_needed'
-    }
     return HttpResponse.json(fp)
   }),
 
@@ -196,7 +234,6 @@ export const handlers = [
   http.put(`${base}/floors/:floorId/mask`, async ({ params, request }) => {
     const floorId = params.floorId as string
     db.masks[floorId] = await request.json()
-    bumpFloorStatus(floorId, 'review_needed', 'beacon_missing')
     return HttpResponse.json({ ok: true })
   }),
 
@@ -233,7 +270,6 @@ export const handlers = [
       sourceLabel: body.sourceLabel,
     }
     db.beacons[floorId] = [...(db.beacons[floorId] ?? []), beacon]
-    bumpFloorStatus(floorId, 'beacon_missing', 'ready')
     return HttpResponse.json(beacon, { status: 201 })
   }),
 

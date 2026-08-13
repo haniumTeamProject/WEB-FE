@@ -143,13 +143,15 @@ function nearestPointOnLoop(loop: Point[], point: Point): { point: Point; segmen
   return best
 }
 
-// segmentIndex 주변 원본 경계점들의 평균 방향(접선)을 구해 90도 회전한 법선을 반환한다.
-function estimateNormal(rawLoop: Point[], segmentIndex: number): Point {
-  const n = rawLoop.length
-  const before = rawLoop[(segmentIndex - TANGENT_WINDOW + n) % n]
-  const after = rawLoop[(segmentIndex + 1 + TANGENT_WINDOW) % n]
-  const tangentX = after[0] - before[0]
-  const tangentY = after[1] - before[1]
+// simplifiedLoop의 해당 segment 방향(접선)을 구해 90도 회전한 법선을 반환한다.
+// 원본(1px 단위) 경계에서 작은 창으로 접선을 구하면 방·복도가 붙어있는 지점의 문턱같은
+// 미세한 요철에 걸려 엉뚱한 방향이 나올 수 있다 — 이미 노이즈를 정리한 simplifiedLoop의
+// segment를 쓰면 그 지점 벽의 "진짜" 방향에 훨씬 안정적으로 근접한다.
+function estimateNormal(simplifiedLoop: Point[], segmentIndex: number): Point {
+  const [x1, y1] = simplifiedLoop[segmentIndex]
+  const [x2, y2] = simplifiedLoop[(segmentIndex + 1) % simplifiedLoop.length]
+  const tangentX = x2 - x1
+  const tangentY = y2 - y1
   const length = Math.hypot(tangentX, tangentY)
   if (length === 0) return [0, 0]
   return [-tangentY / length, tangentX / length]
@@ -187,10 +189,11 @@ function kindPriority(kind: NodeKind): number {
 
 const MIN_COMPONENT_PIXELS = 25
 const SIMPLIFY_EPSILON_PX = 3
-const MAX_SNAP_PX = 30
+const MAX_SNAP_PX = 50
 const MERGE_RADIUS_PX = 6
-const TANGENT_WINDOW = 6
-const CROSSING_MAX_PX = 100
+// 실제 축척(m_per_px)이 아직 없어 순수 픽셀 임계값이다 — 작업 캔버스 폭(~760px) 기준으로 가늠한 값.
+// 축척 기능이 붙으면 실거리(m) 기준으로 바꿔야 한다.
+const CROSSING_MAX_PX = 240
 
 interface LoopEntry {
   point: Point
@@ -230,8 +233,8 @@ export function generatePathNodes(
     })
     .filter((component) => component.rawLoop.length > 0 && component.simplifiedLoop.length >= 3)
 
-  // 입구 후보를 가장 가까운 컴포넌트에 배정한다(30px 초과 시 버림)
-  const assigned: { entrance: EntrancePoint; snap: Point; rawSegmentIndex: number }[][] = components.map(() => [])
+  // 입구 후보를 가장 가까운 컴포넌트에 배정한다(50px 초과 시 버림)
+  const assigned: { entrance: EntrancePoint; snap: Point }[][] = components.map(() => [])
   for (const entrance of entrances) {
     let bestComponentIndex = -1
     let bestSnap: ReturnType<typeof nearestPointOnLoop> | null = null
@@ -246,7 +249,7 @@ export function generatePathNodes(
       console.warn(`[pathNodes] entrance snap skipped (too far): kind=${entrance.kind} at (${entrance.x}, ${entrance.y})`)
       continue
     }
-    assigned[bestComponentIndex].push({ entrance, snap: bestSnap.point, rawSegmentIndex: bestSnap.segmentIndex })
+    assigned[bestComponentIndex].push({ entrance, snap: bestSnap.point })
   }
 
   components.forEach(({ rawLoop, simplifiedLoop }, componentIndex) => {
@@ -270,9 +273,10 @@ export function generatePathNodes(
     }
 
     const pairs: { entranceEntry: LoopEntry; facingEntry: LoopEntry }[] = []
-    for (const { entrance, snap, rawSegmentIndex } of assigned[componentIndex]) {
+    for (const { entrance, snap } of assigned[componentIndex]) {
       const entranceEntry = findOrInsert(snap, entrance.kind)
-      const normal = estimateNormal(rawLoop, rawSegmentIndex)
+      const nearestSimplified = nearestPointOnLoop(simplifiedLoop, snap)
+      const normal = estimateNormal(simplifiedLoop, nearestSimplified.segmentIndex)
       const facingRaw = rayCastToOppositeWall(mask, w, h, snap, normal)
       if (!facingRaw) {
         console.warn(`[pathNodes] facing point not found: kind=${entrance.kind} at (${entrance.x}, ${entrance.y})`)
@@ -317,7 +321,14 @@ export function generatePathNodes(
       const a = entryToNode.get(entranceEntry)!
       const b = entryToNode.get(facingEntry)!
       if (a.id === b.id) continue
-      if (Math.hypot(a.x - b.x, a.y - b.y) <= CROSSING_MAX_PX) addEdge(a, b, 'cross')
+      const distance = Math.hypot(a.x - b.x, a.y - b.y)
+      if (distance <= CROSSING_MAX_PX) {
+        addEdge(a, b, 'cross')
+      } else {
+        console.warn(
+          `[pathNodes] crossing edge skipped (too wide): ${a.id}↔${b.id} distance=${Math.round(distance)}px > ${CROSSING_MAX_PX}px`,
+        )
+      }
     }
   })
 
