@@ -3,6 +3,7 @@ import Konva from 'konva'
 import { Stage, Layer, Image as KonvaImage, Circle, Text } from 'react-konva'
 import { useFloorplan } from '@/features/floorplan/hooks'
 import { MAP_DESIGN_W as DESIGN_W } from '@/lib/constants'
+import { snapToGrid } from '@/lib/utils'
 
 export interface MapPoint {
   id: string
@@ -64,7 +65,7 @@ export function FloorMapCanvas({
     if (!stage || e.target !== stage) return
     const pos = stage.getPointerPosition()
     if (!pos) return
-    onCanvasClick(Math.round(pos.x / scale), Math.round(pos.y / scale))
+    onCanvasClick(snapToGrid(Math.round(pos.x / scale)), snapToGrid(Math.round(pos.y / scale)))
   }
 
   if (!floorplan) {
@@ -99,7 +100,11 @@ export function FloorMapCanvas({
                 strokeWidth={2}
                 draggable={!!onMove}
                 onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) =>
-                  onMove?.(p.id, Math.round(e.target.x() / scale), Math.round(e.target.y() / scale))
+                  onMove?.(
+                    p.id,
+                    snapToGrid(Math.round(e.target.x() / scale)),
+                    snapToGrid(Math.round(e.target.y() / scale)),
+                  )
                 }
               />
               <Text
