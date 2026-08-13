@@ -31,6 +31,9 @@ export const LANDMARK_TYPE_COLOR: Record<LandmarkType, string> = {
   entrance: '#F2992E',
 }
 
+// 수직연결자 지도 점 색 — PathNodePage의 연결자 입구 색(ENTRANCE_COLOR.connector)과 동일하게 맞춤
+export const CONNECTOR_COLOR = '#2563eb'
+
 // 층 세팅 상태 뱃지 (와이어프레임 5색과 일치)
 export const FLOOR_STATUS_BADGE: Record<
   FloorSetupStatus,
