@@ -16,6 +16,7 @@ import ConnectorPage from '@/pages/connectors/ConnectorPage'
 import FloorplanUploadPage from '@/pages/floorplan/FloorplanUploadPage'
 // Konva 에디터는 무거워서 이 라우트에서만 로드 (코드 스플리팅)
 const MapReviewPage = lazy(() => import('@/pages/map-editor/MapReviewPage'))
+const ConnectorPlacementPage = lazy(() => import('@/pages/connectors/ConnectorPlacementPage'))
 // Konva(지도) 쓰는 페이지는 lazy 로드
 const BeaconListPage = lazy(() => import('@/pages/beacons/BeaconListPage'))
 import BeaconEditPage from '@/pages/beacons/BeaconEditPage'
@@ -61,6 +62,14 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<p style={{ color: '#8C99B3' }}>에디터 불러오는 중…</p>}>
             <MapReviewPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/buildings/:buildingId/floors/:floorId/connectors',
+        element: (
+          <Suspense fallback={<p style={{ color: '#8C99B3' }}>불러오는 중…</p>}>
+            <ConnectorPlacementPage />
           </Suspense>
         ),
       },
