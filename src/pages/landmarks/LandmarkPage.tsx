@@ -9,7 +9,7 @@ import {
   useLandmarks,
   useUpdateLandmark,
 } from '@/features/landmarks/hooks'
-import type { Landmark, LandmarkType } from '@/types/domain'
+import type { Landmark } from '@/types/domain'
 import { FloorMapCanvas } from '@/components/map/FloorMapCanvas'
 import type { MapPoint } from '@/components/map/FloorMapCanvas'
 import { Card } from '@/components/ui/Card'
@@ -19,16 +19,9 @@ import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { AsyncState } from '@/components/ui/AsyncState'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { ColorSelect } from '@/components/ui/ColorSelect'
 import { LANDMARK_TYPE_COLOR as TYPE_COLOR, LANDMARK_TYPE_LABEL as TYPE_LABEL } from '@/lib/constants'
 import { diffImport, parseMappinProjectFile, toDesignCoords } from '@/lib/mapImport'
 import type { ImportPlan } from '@/lib/mapImport'
-
-const TYPE_OPTIONS = (Object.keys(TYPE_LABEL) as LandmarkType[]).map((value) => ({
-  value,
-  label: TYPE_LABEL[value],
-  color: TYPE_COLOR[value],
-}))
 
 export default function LandmarkPage() {
   const { buildingId = '', floorId = '' } = useParams()
@@ -41,7 +34,6 @@ export default function LandmarkPage() {
   const del = useDeleteLandmark(floorId)
 
   const [name, setName] = useState('')
-  const [type, setType] = useState<LandmarkType>('room')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -55,11 +47,10 @@ export default function LandmarkPage() {
     e.preventDefault()
     if (!valid) return
     create.mutate(
-      { name: name.trim(), type, x: 450, y: 280 },
+      { name: name.trim(), type: 'room', x: 450, y: 280 },
       {
         onSuccess: () => {
           setName('')
-          setType('room')
         },
       },
     )
@@ -145,7 +136,6 @@ export default function LandmarkPage() {
           <h3>목적지 추가</h3>
           <form onSubmit={onSubmit} className="grid gap-3">
             <Input label="이름" placeholder="406호" value={name} onChange={(e) => setName(e.target.value)} />
-            <ColorSelect label="타입" value={type} onChange={setType} options={TYPE_OPTIONS} />
             <Button type="submit" disabled={!valid || create.isPending}>
               목적지 추가
             </Button>
