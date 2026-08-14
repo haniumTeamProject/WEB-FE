@@ -67,6 +67,11 @@ export default function BuildingDetailPage() {
                     지도 검수
                   </Button>
                 </Link>
+                <Link to={`/buildings/${buildingId}/floors/${f.id}/connectors`}>
+                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                    수직연결자
+                  </Button>
+                </Link>
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/landmarks`}>
                   <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
                     목적지
