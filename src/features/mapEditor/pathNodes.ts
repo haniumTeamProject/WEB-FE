@@ -143,6 +143,34 @@ function nearestPointOnLoop(loop: Point[], point: Point): { point: Point; segmen
   return best
 }
 
+const FACING_T_MARGIN = 0.02
+
+// point가 진짜로 "마주보고" 있는 벽 segment을 찾는다. 문틀 옆기둥(jamb)처럼 point에 유클리드
+// 거리는 가깝지만 투영점이 segment 끝(모서리)에 걸리는 경우는 제외한다 — 그런 모서리를 기준으로
+// 법선을 구하면 통로를 가로지르는 방향이 아니라 문틀을 따라가는 방향이 나와, 입구와 맞은편 지점이
+// 사실상 같은 문턱 선 위에 찍히는 문제가 생긴다. 투영점이 segment 내부(t가 0과 1 사이)에 오는,
+// 즉 그 벽을 수직으로 마주보는 segment만 후보로 삼고 그중 가장 가까운 것을 고른다.
+function nearestFacingSegment(
+  loop: Point[],
+  point: Point,
+): { segmentIndex: number; projected: Point; distance: number } | null {
+  let best: { segmentIndex: number; projected: Point; distance: number } | null = null
+  for (let i = 0; i < loop.length; i++) {
+    const [x1, y1] = loop[i]
+    const [x2, y2] = loop[(i + 1) % loop.length]
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const lengthSquared = dx * dx + dy * dy
+    if (lengthSquared === 0) continue
+    const t = ((point[0] - x1) * dx + (point[1] - y1) * dy) / lengthSquared
+    if (t <= FACING_T_MARGIN || t >= 1 - FACING_T_MARGIN) continue
+    const projected: Point = [x1 + t * dx, y1 + t * dy]
+    const distance = Math.hypot(point[0] - projected[0], point[1] - projected[1])
+    if (!best || distance < best.distance) best = { segmentIndex: i, projected, distance }
+  }
+  return best
+}
+
 // simplifiedLoop의 해당 segment 방향(접선)을 구해 90도 회전한 법선을 반환한다.
 // 원본(1px 단위) 경계에서 작은 창으로 접선을 구하면 방·복도가 붙어있는 지점의 문턱같은
 // 미세한 요철에 걸려 엉뚱한 방향이 나올 수 있다 — 이미 노이즈를 정리한 simplifiedLoop의
@@ -275,9 +303,18 @@ export function generatePathNodes(
     const pairs: { entranceEntry: LoopEntry; facingEntry: LoopEntry }[] = []
     for (const { entrance, snap } of assigned[componentIndex]) {
       const entranceEntry = findOrInsert(snap, entrance.kind)
-      const nearestSimplified = nearestPointOnLoop(simplifiedLoop, snap)
-      const normal = estimateNormal(simplifiedLoop, nearestSimplified.segmentIndex)
-      const facingRaw = rayCastToOppositeWall(mask, w, h, snap, normal)
+      // 문틀 옆기둥 같은 모서리에 snap이 정확히 걸려 있으면(distance=0) 그 모서리에 인접한 아주 짧은
+      // segment이 "가장 가까운" 것으로 잡혀 법선이 엉뚱한 방향(통로를 가로지르지 않고 문턱을 따라가는
+      // 방향)으로 나올 수 있다 — 먼저 원본 입구 좌표 기준으로 진짜 마주보는 segment을 찾는다.
+      // 이때 레이도 모서리(snap)가 아니라 그 segment 위의 실제 투영점에서 쏴야 한다 — 모서리에서
+      // 쏘면 방향이 맞아도 모서리와 맞닿은 다른 벽을 따라 미끄러지듯 나아가 결국 같은 문턱 근처에서
+      // 멈출 수 있다. 마주보는 segment을 못 찾으면(흔치 않은 경우) 기존 방식대로 모서리에서 쏜다.
+      const facingSegment = nearestFacingSegment(simplifiedLoop, [entrance.x, entrance.y])
+      const rayStart = facingSegment?.projected ?? snap
+      const normal = facingSegment
+        ? estimateNormal(simplifiedLoop, facingSegment.segmentIndex)
+        : estimateNormal(simplifiedLoop, nearestPointOnLoop(simplifiedLoop, snap).segmentIndex)
+      const facingRaw = rayCastToOppositeWall(mask, w, h, rayStart, normal)
       if (!facingRaw) {
         console.warn(`[pathNodes] facing point not found: kind=${entrance.kind} at (${entrance.x}, ${entrance.y})`)
         continue
