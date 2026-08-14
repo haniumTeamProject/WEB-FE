@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import type { FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import {
   useConnectors,
+  useCreateConnector,
   useSetConnectorPosition,
   useClearConnectorPosition,
 } from '@/features/connectors/hooks'
@@ -11,6 +13,7 @@ import type { ConnectorType } from '@/types/domain'
 import { FloorMapCanvas } from '@/components/map/FloorMapCanvas'
 import type { MapPoint } from '@/components/map/FloorMapCanvas'
 import { Card } from '@/components/ui/Card'
+import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
@@ -25,10 +28,13 @@ export default function ConnectorPlacementPage() {
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
   const { data: connectors, isLoading, isError, refetch } = useConnectors(buildingId)
+  const create = useCreateConnector(buildingId)
   const setPosition = useSetConnectorPosition(buildingId)
   const clearPosition = useClearConnectorPosition(buildingId)
 
   const [armedId, setArmedId] = useState<string | null>(null)
+  const [newName, setNewName] = useState('')
+  const [newType, setNewType] = useState<ConnectorType>('elevator')
 
   const relevant = (connectors ?? []).filter((c) => floor && c.floors.includes(floor.floor))
 
@@ -43,6 +49,15 @@ export default function ConnectorPlacementPage() {
   function placeArmed(x: number, y: number) {
     if (!armedId) return
     setPosition.mutate({ connectorId: armedId, floorId, x, y }, { onSuccess: () => setArmedId(null) })
+  }
+
+  function onCreateSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!newName.trim() || !floor) return
+    create.mutate(
+      { name: newName.trim(), type: newType, floors: [floor.floor] },
+      { onSuccess: () => { setNewName(''); setNewType('elevator') } },
+    )
   }
 
   const crumbs = [
@@ -89,8 +104,8 @@ export default function ConnectorPlacementPage() {
                   key={c.id}
                   className={`p-3 border rounded-lg ${armed ? 'border-brand' : 'border-line'}`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
                       <div className="font-medium">{c.name}</div>
                       <div className="text-[13px] text-muted">
                         {TYPE_LABEL[c.type]} · {placed ? '위치 지정됨' : '위치 미지정'}
@@ -98,6 +113,7 @@ export default function ConnectorPlacementPage() {
                     </div>
                     <Button
                       variant={armed ? 'primary' : 'outline'}
+                      className="shrink-0 whitespace-nowrap"
                       style={{ height: 34, padding: '0 12px' }}
                       onClick={() => setArmedId(armed ? null : c.id)}
                     >
@@ -107,6 +123,7 @@ export default function ConnectorPlacementPage() {
                   {placed && (
                     <Button
                       variant="danger"
+                      className="whitespace-nowrap"
                       style={{ height: 30, padding: '0 10px', marginTop: 8 }}
                       disabled={clearPosition.isPending}
                       onClick={() => clearPosition.mutate({ connectorId: c.id, floorId })}
@@ -118,15 +135,37 @@ export default function ConnectorPlacementPage() {
               )
             })}
             {!isLoading && !isError && relevant.length === 0 && (
-              <AsyncState
-                status="empty"
-                title="이 층에 해당하는 연결자가 없습니다."
-                action={
-                  <Link to={`/buildings/${buildingId}/connectors`} className="text-brand font-semibold hover:underline">
-                    건물 단위 연결자 관리에서 추가 →
-                  </Link>
-                }
-              />
+              <div>
+                <AsyncState status="empty" title="이 층에 해당하는 연결자가 없습니다." />
+                <form onSubmit={onCreateSubmit} className="grid gap-3 mt-2">
+                  <Input
+                    label="이름"
+                    placeholder="엘리베이터 1호기"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                  />
+                  <label className="block">
+                    <span className="block text-[13px] text-muted mb-2">타입</span>
+                    <select
+                      value={newType}
+                      onChange={(e) => setNewType(e.target.value as ConnectorType)}
+                      className="w-full h-12 px-4 rounded-lg border border-[#DEE2EB] bg-field text-sm outline-none"
+                    >
+                      <option value="elevator">엘리베이터</option>
+                      <option value="stairs">계단</option>
+                    </select>
+                  </label>
+                  <Button type="submit" disabled={!newName.trim() || create.isPending}>
+                    이 층에 연결자 등록
+                  </Button>
+                </form>
+                <Link
+                  to={`/buildings/${buildingId}/connectors`}
+                  className="block text-brand font-semibold hover:underline text-sm mt-3"
+                >
+                  건물 단위 연결자 관리에서 여러 층에 걸친 연결자 추가 →
+                </Link>
+              </div>
             )}
           </div>
         </Card>
