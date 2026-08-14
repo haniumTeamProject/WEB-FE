@@ -158,6 +158,21 @@ export default function ConnectorPage() {
         </Card>
       </div>
 
+      <Card className="mt-6">
+        <h3>층별 배치로 이동</h3>
+        <p className="text-muted text-[13px] mt-2">각 층에서 이 연결자들의 입구 좌표를 지도 위에 찍으려면 해당 층의 배치 화면으로 이동하세요.</p>
+        <div className="flex flex-wrap gap-2 mt-3">
+          {floors?.map((f) => (
+            <Link key={f.id} to={`/buildings/${buildingId}/floors/${f.id}/connectors`}>
+              <Button variant="outline" style={{ height: 36, padding: '0 14px' }}>
+                {f.floor}층 배치 →
+              </Button>
+            </Link>
+          ))}
+          {floors && floors.length === 0 && <span className="text-muted text-sm">아직 등록된 층이 없습니다.</span>}
+        </div>
+      </Card>
+
       <ConfirmDialog
         open={!!deleteTarget}
         title="연결자를 삭제할까요?"
