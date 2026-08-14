@@ -31,6 +31,7 @@ export interface Building {
 export type FloorSetupStatus =
   | 'floorplan_missing' // 설계도 미업로드
   | 'review_needed' // 검수 필요
+  | 'scale_missing' // 축척 미설정
   | 'beacon_missing' // 비콘 미등록
   | 'connector_missing' // 연결자 결손
   | 'ready' // 안내 가능

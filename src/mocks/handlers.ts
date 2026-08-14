@@ -20,6 +20,7 @@ function findBuildingIdForFloor(floorId: string): string | undefined {
 function computeFloorStatus(floorId: string): FloorSetupStatus {
   if (!db.floorplans[floorId]) return 'floorplan_missing'
   if (!db.masks[floorId]) return 'review_needed'
+  if (!db.scales[floorId]) return 'scale_missing'
   const beacons = db.beacons[floorId] ?? []
   if (beacons.length === 0) return 'beacon_missing'
 
@@ -36,6 +37,7 @@ function computeFloorStatus(floorId: string): FloorSetupStatus {
 const FLOOR_STATUS_PROGRESS: FloorSetupStatus[] = [
   'floorplan_missing',
   'review_needed',
+  'scale_missing',
   'beacon_missing',
   'connector_missing',
   'ready',
@@ -260,6 +262,17 @@ export const handlers = [
   http.put(`${base}/floors/:floorId/mask`, async ({ params, request }) => {
     const floorId = params.floorId as string
     db.masks[floorId] = await request.json()
+    return HttpResponse.json({ ok: true })
+  }),
+
+  // ---- 지도 검수: 축척 ----
+  http.get(`${base}/floors/:floorId/scale`, ({ params }) =>
+    HttpResponse.json(db.scales[params.floorId as string] ?? null),
+  ),
+
+  http.put(`${base}/floors/:floorId/scale`, async ({ params, request }) => {
+    const floorId = params.floorId as string
+    db.scales[floorId] = (await request.json()) as { scaleMPerPx: number }
     return HttpResponse.json({ ok: true })
   }),
 

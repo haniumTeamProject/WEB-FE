@@ -35,6 +35,7 @@ export const db: {
   connectors: Record<string, Connector[]>
   floorplans: Record<string, Floorplan>
   masks: Record<string, unknown>
+  scales: Record<string, { scaleMPerPx: number }>
   beacons: Record<string, Beacon[]>
   landmarks: Record<string, Landmark[]>
   admins: Admin[]
@@ -75,6 +76,7 @@ export const db: {
     'suwon_ict-4': { floorId: 'suwon_ict-4', imageUrl: sampleFloorplan, extracted: true },
   },
   masks: {},
+  scales: {},
   // 실제 도면으로 경로노드 테스트를 하는 층이라 데모 비콘/랜드마크를 심어두지 않는다 —
   // 남겨두면 사용자가 아무것도 등록하지 않아도 경로노드 생성 시 "입구"로 잡혀 혼란을 준다.
   beacons: {

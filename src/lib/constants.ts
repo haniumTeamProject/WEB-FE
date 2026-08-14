@@ -41,6 +41,7 @@ export const FLOOR_STATUS_BADGE: Record<
 > = {
   floorplan_missing: { label: '설계도 미업로드', bg: '#EEEFF2', fg: '#8C99B3' },
   review_needed: { label: '검수 필요', bg: '#FDEDD9', fg: '#F2992E' },
+  scale_missing: { label: '축척 미설정', bg: '#F3EAFB', fg: '#8C5BD6' },
   beacon_missing: { label: '비콘 미등록', bg: '#E6EDFB', fg: '#4B70E5' },
   connector_missing: { label: '연결자 결손', bg: '#FBE6E6', fg: '#DC4C4C' },
   ready: { label: '안내 가능', bg: '#E6F7EE', fg: '#4BAE72' },

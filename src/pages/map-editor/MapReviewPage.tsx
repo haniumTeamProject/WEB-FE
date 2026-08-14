@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
-import { useMask, useSaveMask } from '@/features/mapEditor/hooks'
+import { useMask, useSaveMask, useScale, useSaveScale } from '@/features/mapEditor/hooks'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -15,7 +15,7 @@ const CANVAS_W = 760
 const FILL: [number, number, number, number] = [75, 112, 229, 120] // 이동영역(반투명 파랑)
 const BARRIER_R = 4 // 벽 펜 반경(px)
 
-type Tool = 'fill' | 'erase' | 'wall'
+type Tool = 'fill' | 'erase' | 'wall' | 'scale'
 
 export default function MapReviewPage() {
   const { buildingId = '', floorId = '' } = useParams()
@@ -25,6 +25,8 @@ export default function MapReviewPage() {
   const { data: floorplan, isLoading } = useFloorplan(floorId)
   const { data: savedMask } = useMask(floorId)
   const save = useSaveMask(floorId)
+  const { data: savedScale } = useScale(floorId)
+  const saveScale = useSaveScale(floorId)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -35,10 +37,14 @@ export default function MapReviewPage() {
   const historyRef = useRef<{ w: Uint8Array; b: Uint8Array }[]>([])
   const drawingRef = useRef(false)
   const lastRef = useRef<{ x: number; y: number } | null>(null)
+  const scalePointsRef = useRef<{ x: number; y: number }[]>([]) // 축척 측정용 두 점(계산 후 저장하지 않음)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
   const [tool, setTool] = useState<Tool>('fill')
   const [threshold, setThreshold] = useState(240) // 이보다 어두운 픽셀 = 벽(경계)
+  const [scaleModalOpen, setScaleModalOpen] = useState(false)
+  const [distanceInput, setDistanceInput] = useState('')
+  const [distanceError, setDistanceError] = useState<string | null>(null)
 
   function rebuildMask() {
     const mask = maskCanvasRef.current
@@ -74,6 +80,36 @@ export default function MapReviewPage() {
     ctx.clearRect(0, 0, cv.width, cv.height)
     ctx.drawImage(base, 0, 0)
     if (mask) ctx.drawImage(mask, 0, 0)
+    drawScaleOverlay(ctx)
+  }
+
+  // 측정 중인 축척 두 점 + 연결선을 마스크 위에 그림(저장 대상 아님, 화면 표시용)
+  function drawScaleOverlay(ctx: CanvasRenderingContext2D) {
+    const pts = scalePointsRef.current
+    if (pts.length === 0) return
+    ctx.save()
+    ctx.fillStyle = '#DC4C4C'
+    ctx.strokeStyle = '#DC4C4C'
+    ctx.lineWidth = 2
+    if (pts.length === 2) {
+      ctx.beginPath()
+      ctx.moveTo(pts[0].x, pts[0].y)
+      ctx.lineTo(pts[1].x, pts[1].y)
+      ctx.stroke()
+    }
+    for (const p of pts) {
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.restore()
+  }
+
+  // 도구 전환 시 진행 중이던 축척 측정 점은 버림
+  function selectTool(mode: Tool) {
+    scalePointsRef.current = []
+    setTool(mode)
+    redraw()
   }
 
   function pushHistory() {
@@ -244,7 +280,49 @@ export default function MapReviewPage() {
   function onCanvasClick(e: ReactMouseEvent<HTMLCanvasElement>) {
     if (tool === 'wall') return // 벽은 드래그로 처리
     const { x, y } = getXY(e)
+    if (tool === 'scale') {
+      const pts = scalePointsRef.current
+      scalePointsRef.current = pts.length >= 2 ? [{ x, y }] : [...pts, { x, y }]
+      redraw()
+      if (scalePointsRef.current.length === 2) {
+        setDistanceInput('')
+        setDistanceError(null)
+        setScaleModalOpen(true)
+      }
+      return
+    }
     flood(x, y, tool === 'fill')
+  }
+
+  function confirmScale() {
+    const pts = scalePointsRef.current
+    if (pts.length !== 2) return
+    const pixelDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+    const meters = Number(distanceInput)
+    if (pixelDist <= 0) {
+      setDistanceError('같은 지점을 두 번 클릭했습니다. 취소 후 다시 측정해주세요.')
+      return
+    }
+    if (!Number.isFinite(meters) || meters <= 0) {
+      setDistanceError('실거리를 0보다 큰 숫자로 입력하세요.')
+      return
+    }
+    saveScale.mutate(
+      { scaleMPerPx: meters / pixelDist },
+      {
+        onSuccess: () => {
+          scalePointsRef.current = []
+          setScaleModalOpen(false)
+          redraw()
+        },
+      },
+    )
+  }
+
+  function cancelScale() {
+    scalePointsRef.current = []
+    setScaleModalOpen(false)
+    redraw()
   }
 
   function undo() {
@@ -316,7 +394,7 @@ export default function MapReviewPage() {
 
   const toolBtn = (mode: Tool, label: string) => (
     <button
-      onClick={() => setTool(mode)}
+      onClick={() => selectTool(mode)}
       className={`h-11 rounded-lg text-sm font-medium border ${
         tool === mode ? 'bg-brand text-white border-transparent' : 'bg-white text-body border-line'
       }`}
@@ -361,6 +439,7 @@ export default function MapReviewPage() {
             {toolBtn('fill', '영역 채우기')}
             {toolBtn('wall', '벽 그리기 (틈 막기)')}
             {toolBtn('erase', '영역 지우기')}
+            {toolBtn('scale', '축척 설정')}
           </div>
 
           <div className="mt-4">
@@ -376,6 +455,22 @@ export default function MapReviewPage() {
             <span className="block text-[12px] text-muted mt-1">
               밖으로 새면 ↑ 올리고, 방 안에서 안 퍼지면 ↓ 내리세요.
             </span>
+          </div>
+
+          <div className="mt-4">
+            <span className="block text-[13px] text-muted mb-2">축척</span>
+            {savedScale ? (
+              <p className="text-[13px] text-ink">
+                현재 축척: 100px ≈ {(savedScale.scaleMPerPx * 100).toFixed(2)}m
+              </p>
+            ) : (
+              <p className="text-[13px] text-muted">축척이 아직 설정되지 않았습니다.</p>
+            )}
+            {tool === 'scale' && (
+              <p className="text-[12px] text-muted mt-1">
+                실제 거리를 아는 두 지점을 도면 위에서 순서대로 클릭하세요.
+              </p>
+            )}
           </div>
 
           <div className="grid gap-2 mt-4">
@@ -418,6 +513,37 @@ export default function MapReviewPage() {
             }}
           >
             확인
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal open={scaleModalOpen} onClose={cancelScale}>
+        <h2 style={{ marginTop: 0 }}>실거리 입력</h2>
+        <p style={{ color: '#8C99B3' }}>방금 찍은 두 지점 사이의 실제 거리를 미터(m) 단위로 입력하세요.</p>
+        <input
+          type="number"
+          min={0}
+          step="0.01"
+          autoFocus
+          value={distanceInput}
+          onChange={(e) => {
+            setDistanceInput(e.target.value)
+            setDistanceError(null)
+          }}
+          placeholder="예: 2.4"
+          className="w-full h-12 px-4 mt-3 rounded-lg border border-[#DEE2EB] bg-field text-sm outline-none"
+        />
+        {distanceError && (
+          <p className="text-[13px] mt-2" style={{ color: '#DC4C4C' }}>
+            {distanceError}
+          </p>
+        )}
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 }}>
+          <Button variant="outline" onClick={cancelScale}>
+            취소
+          </Button>
+          <Button disabled={saveScale.isPending} onClick={confirmScale}>
+            {saveScale.isPending ? '저장 중…' : '확인'}
           </Button>
         </div>
       </Modal>
