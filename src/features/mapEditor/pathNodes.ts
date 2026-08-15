@@ -219,9 +219,8 @@ const MIN_COMPONENT_PIXELS = 25
 const SIMPLIFY_EPSILON_PX = 3
 const MAX_SNAP_PX = 50
 const MERGE_RADIUS_PX = 6
-// 실제 축척(m_per_px)이 아직 없어 순수 픽셀 임계값이다 — 작업 캔버스 폭(~760px) 기준으로 가늠한 값.
-// 축척 기능이 붙으면 실거리(m) 기준으로 바꿔야 한다.
-const CROSSING_MAX_PX = 240
+// 축척이 아직 없을 때(호출부에서 crossingMaxPx를 안 넘겼을 때)의 기본값 — 작업 캔버스 폭(~760px) 기준으로 가늠한 값.
+const DEFAULT_CROSSING_MAX_PX = 240
 
 interface LoopEntry {
   point: Point
@@ -236,6 +235,7 @@ export function generatePathNodes(
   w: number,
   h: number,
   entrances: EntrancePoint[] = [],
+  crossingMaxPx: number = DEFAULT_CROSSING_MAX_PX,
 ): { nodes: PathNode[]; edges: PathEdge[] } {
   const nodes: PathNode[] = []
   const edges: PathEdge[] = []
@@ -300,7 +300,7 @@ export function generatePathNodes(
       return entry
     }
 
-    const pairs: { entranceEntry: LoopEntry; facingEntry: LoopEntry }[] = []
+    const pairs: { a: LoopEntry; b: LoopEntry }[] = []
     for (const { entrance, snap } of assigned[componentIndex]) {
       const entranceEntry = findOrInsert(snap, entrance.kind)
       // 문틀 옆기둥 같은 모서리에 snap이 정확히 걸려 있으면(distance=0) 그 모서리에 인접한 아주 짧은
@@ -323,7 +323,19 @@ export function generatePathNodes(
       // 맞은편 지점이 자기 짝인 입구 노드 자체와 병합되지 않도록 제외한다(좁은 복도에서 폭이
       // MERGE_RADIUS_PX보다 작으면 자기 자신과 합쳐져 버리는 문제 방지).
       const facingEntry = findOrInsert(facingSnap, 'facing', entrance.kind, entranceEntry)
-      pairs.push({ entranceEntry, facingEntry })
+      pairs.push({ a: entranceEntry, b: facingEntry })
+    }
+
+    // 코너 노드(오목·볼록 모두)에서도 마주보는 벽 지점을 찾아 건너기 후보로 추가한다.
+    // 입구에 이미 병합된 코너는 kind가 'connector'/'landmark'로 바뀌어 있어 여기서 자동 제외된다.
+    // 실제 엣지로 남을지는 아래에서 crossingMaxPx로 다시 거른다(넓은 방의 코너는 자연히 걸러짐).
+    for (const cornerEntry of entries.filter((entry) => entry.kind === 'corner')) {
+      const normal = estimateNormal(simplifiedLoop, cornerEntry.segmentIndex)
+      const facingRaw = rayCastToOppositeWall(mask, w, h, cornerEntry.point, normal)
+      if (!facingRaw) continue
+      const facingSnap = nearestPointOnLoop(rawLoop, facingRaw).point
+      const facingEntry = findOrInsert(facingSnap, 'facing', undefined, cornerEntry)
+      pairs.push({ a: cornerEntry, b: facingEntry })
     }
 
     entries.sort((a, b) => a.segmentIndex - b.segmentIndex || a.t - b.t)
@@ -354,16 +366,16 @@ export function generatePathNodes(
     for (let index = 0; index < componentNodes.length; index++) {
       addEdge(componentNodes[index], componentNodes[(index + 1) % componentNodes.length], 'wall')
     }
-    for (const { entranceEntry, facingEntry } of pairs) {
-      const a = entryToNode.get(entranceEntry)!
-      const b = entryToNode.get(facingEntry)!
+    for (const { a: entryA, b: entryB } of pairs) {
+      const a = entryToNode.get(entryA)!
+      const b = entryToNode.get(entryB)!
       if (a.id === b.id) continue
       const distance = Math.hypot(a.x - b.x, a.y - b.y)
-      if (distance <= CROSSING_MAX_PX) {
+      if (distance <= crossingMaxPx) {
         addEdge(a, b, 'cross')
       } else {
         console.warn(
-          `[pathNodes] crossing edge skipped (too wide): ${a.id}↔${b.id} distance=${Math.round(distance)}px > ${CROSSING_MAX_PX}px`,
+          `[pathNodes] crossing edge skipped (too wide): ${a.id}↔${b.id} distance=${Math.round(distance)}px > ${crossingMaxPx}px`,
         )
       }
     }

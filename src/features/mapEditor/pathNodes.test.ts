@@ -16,7 +16,9 @@ describe('generatePathNodes crossing normal', () => {
     const entrance = { x: 82, y: 2, kind: 'landmark' as const }
     const { nodes } = generatePathNodes(mask, W, H, [entrance])
 
-    const facing = nodes.find((n) => n.type === 'facing')
+    // 코너끼리도 마주보는 지점을 만들다 보니 'facing' 타입이 여러 개 나올 수 있다 — 입구(landmark) 짝인
+    // 것만 골라야 이 테스트가 검증하려는 "입구의 맞은편"과 정확히 비교된다.
+    const facing = nodes.find((n) => n.type === 'facing' && n.pairKind === 'landmark')
     expect(facing).toBeTruthy()
     // 진짜 반대편(복도 아래쪽 벽, y≈40)이어야 한다 — 같은 쪽(문턱 옆, y<20)이면 안 됨.
     expect(facing!.y).toBeGreaterThan(35)
@@ -41,11 +43,51 @@ describe('generatePathNodes crossing normal', () => {
     const { nodes } = generatePathNodes(mask, W, H, [entrance])
 
     const landmark = nodes.find((n) => n.type === 'landmark')
-    const facing = nodes.find((n) => n.type === 'facing')
+    // 코너끼리도 마주보는 지점을 만들다 보니 'facing' 타입이 여러 개 나올 수 있다 — 입구(landmark) 짝인
+    // 것만 골라야 이 테스트가 검증하려는 "입구의 맞은편"과 정확히 비교된다.
+    const facing = nodes.find((n) => n.type === 'facing' && n.pairKind === 'landmark')
     expect(landmark).toBeTruthy()
     expect(facing).toBeTruthy()
     // 예전 로직은 문틀을 따라 미끄러져 반대쪽 문틀 기둥(x≈80) 근처에서 멈췄다 — 방을 가로질러
     // 진짜 반대편 벽(x≈150)까지 가야 한다.
     expect(facing!.x).toBeGreaterThan(100)
+  })
+})
+
+describe('generatePathNodes corner crossing', () => {
+  it('adds a cross edge at a narrow L-turn corner (both concave and convex sides)', () => {
+    const W = 80
+    const H = 80
+    const mask = new Uint8Array(W * H)
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[y * W + x] = 1
+    }
+    // 세로 복도(폭 10) + 가로 복도(폭 10)가 만나 L자를 이루는, 안쪽 모서리가 좁은 통로
+    rect(0, 0, 10, 60)
+    rect(0, 50, 60, 60)
+
+    const { nodes, edges } = generatePathNodes(mask, W, H, [])
+
+    const crossEdges = edges.filter((e) => e.type === 'cross')
+    expect(crossEdges.length).toBeGreaterThan(0)
+
+    // cross 엣지 하나는 원래 코너였던 노드(오목이든 볼록이든)에서 시작해야 한다
+    const byId = new Map(nodes.map((n) => [n.id, n]))
+    const touchesCorner = crossEdges.some((e) => {
+      const a = byId.get(e.a)
+      const b = byId.get(e.b)
+      return a?.type === 'corner' || b?.type === 'corner'
+    })
+    expect(touchesCorner).toBe(true)
+  })
+
+  it('does not add a cross edge across a wide open room', () => {
+    const SIZE = 300 // 변이 기본 crossingMaxPx(240px)보다 넓은 정사각형 — 모든 코너의 맞은편이 240px보다 멀다
+    const mask = new Uint8Array(SIZE * SIZE)
+    for (let y = 5; y < SIZE - 5; y++) for (let x = 5; x < SIZE - 5; x++) mask[y * SIZE + x] = 1
+
+    const { edges } = generatePathNodes(mask, SIZE, SIZE, [])
+    const crossEdges = edges.filter((e) => e.type === 'cross')
+    expect(crossEdges.length).toBe(0)
   })
 })

@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
-import { useMask } from '@/features/mapEditor/hooks'
+import { useMask, useScale } from '@/features/mapEditor/hooks'
 import { useConnectors } from '@/features/connectors/hooks'
 import { useLandmarks } from '@/features/landmarks/hooks'
 import { generatePathNodes } from '@/features/mapEditor/pathNodes'
@@ -26,8 +26,11 @@ const ENTRANCE_COLOR: Record<'connector' | 'landmark', string> = {
 function nodeColor(node: PathNode): string {
   if (node.type === 'corner') return node.concave ? '#db2777' : '#7c3aed'
   if (node.type === 'connector' || node.type === 'landmark') return ENTRANCE_COLOR[node.type]
-  return ENTRANCE_COLOR[node.pairKind ?? 'connector']
+  // facing: 입구(연결자/랜드마크)의 맞은편이면 그 색, 코너에서 뻗어나온 맞은편이면 코너와 같은 보라
+  return node.pairKind ? ENTRANCE_COLOR[node.pairKind] : '#7c3aed'
 }
+
+const DEFAULT_CROSSING_MAX_M = 12 // 축척 미설정 시 기본 횡단 가능 거리(대략 240px 상당)
 
 function storageKey(floorId: string) {
   return `pathNodes:${floorId}`
@@ -81,8 +84,10 @@ export default function PathNodePage() {
   const floor = floors?.find((f) => f.id === floorId)
   const { data: floorplan, isLoading } = useFloorplan(floorId)
   const { data: savedMask } = useMask(floorId)
+  const { data: savedScale } = useScale(floorId)
   const { data: connectors } = useConnectors(buildingId)
   const { data: landmarks } = useLandmarks(floorId)
+  const [crossingMaxM, setCrossingMaxM] = useState(String(DEFAULT_CROSSING_MAX_M))
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(700)
@@ -175,7 +180,11 @@ export default function PathNodePage() {
           .filter((l) => l.x != null && l.y != null)
           .map((l) => ({ x: (l.x as number) * maskScale, y: (l.y as number) * maskScale, kind: 'landmark' as const })),
       ]
-      const { nodes: n, edges: e } = generatePathNodes(mask, dims.w, dims.h, entrances)
+      // PathNode 좌표는 저장된 마스크와 동일한 픽셀 공간이라 축척(scaleMPerPx)을 별도 비율 보정 없이 바로 쓸 수 있다.
+      const crossingM = Number(crossingMaxM)
+      const crossingMaxPx =
+        savedScale && Number.isFinite(crossingM) && crossingM > 0 ? crossingM / savedScale.scaleMPerPx : undefined
+      const { nodes: n, edges: e } = generatePathNodes(mask, dims.w, dims.h, entrances, crossingMaxPx)
       setNodes(n)
       setEdges(e)
       setMaskDims(dims)
@@ -312,7 +321,7 @@ export default function PathNodePage() {
           </div>
           <div className="flex flex-wrap gap-3 mt-2 text-[12px] text-muted">
             <span style={{ color: '#7c3aed' }}>● 코너</span>
-            <span style={{ color: '#db2777' }}>● 벽 끝(오목)</span>
+            <span style={{ color: '#db2777' }}>● 벽 모서리(건너기 지점)</span>
             <span style={{ color: '#2563eb' }}>● 연결자 입구</span>
             <span style={{ color: '#f2992e' }}>● 랜드마크 출입구</span>
             <span>○ 맞은편 지점</span>
@@ -325,6 +334,28 @@ export default function PathNodePage() {
           <p className="text-muted text-[13px] mt-2">
             비콘·목적지 입구를 기준으로 경로노드를 자동 생성합니다. 위치가 어색하면 점을 드래그해서 옮기세요.
           </p>
+
+          <div className="mt-4">
+            <span className="block text-[13px] text-muted mb-2">횡단 가능한 최대 거리</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] text-muted">최대</span>
+              <input
+                type="number"
+                min={0.1}
+                step={0.5}
+                value={crossingMaxM}
+                onChange={(e) => setCrossingMaxM(e.target.value)}
+                className="w-16 h-9 px-2 rounded-lg border border-line bg-field text-sm outline-none text-right"
+              />
+              <span className="text-[12px] text-muted">m</span>
+            </div>
+            {!savedScale && (
+              <p className="text-[12px] text-muted mt-1">
+                축척이 아직 없어 기본값(약 {DEFAULT_CROSSING_MAX_M}m 상당)으로 계산됩니다.
+              </p>
+            )}
+          </div>
+
           <Button className="w-full mt-4" disabled={generating} onClick={onGenerate}>
             {generating ? '생성 중…' : nodes.length ? '경로 노드 다시 생성' : '경로 노드 생성'}
           </Button>
