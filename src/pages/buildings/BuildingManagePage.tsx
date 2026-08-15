@@ -1,12 +1,36 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useBuildings, useDeleteBuilding } from '@/features/buildings/hooks'
+import { useBuildings, useDeleteBuilding, useUpdateBuilding } from '@/features/buildings/hooks'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { StatusBadge } from '@/components/ui/Badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { AsyncState } from '@/components/ui/AsyncState'
+
+function FavoriteToggle({ id, favorite }: { id: string; favorite?: boolean }) {
+  const update = useUpdateBuilding(id)
+  return (
+    <button
+      onClick={(e) => {
+        e.preventDefault()
+        update.mutate({ favorite: !favorite })
+      }}
+      disabled={update.isPending}
+      aria-label={favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+      style={{
+        border: 'none',
+        background: 'none',
+        cursor: 'pointer',
+        fontSize: 20,
+        lineHeight: 1,
+        color: favorite ? '#F2992E' : '#DEE2EB',
+      }}
+    >
+      {favorite ? '★' : '☆'}
+    </button>
+  )
+}
 
 // 건물 목록/관리 — 등록·삭제·상세 진입
 export default function BuildingManagePage() {
@@ -34,12 +58,15 @@ export default function BuildingManagePage() {
             key={b.id}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
           >
-            <Link
-              to={`/buildings/${b.id}`}
-              style={{ fontWeight: 700, color: 'inherit', textDecoration: 'none', flex: 1 }}
-            >
-              {b.name}
-            </Link>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+              <FavoriteToggle id={b.id} favorite={b.favorite} />
+              <Link
+                to={`/buildings/${b.id}`}
+                style={{ fontWeight: 700, color: 'inherit', textDecoration: 'none' }}
+              >
+                {b.name}
+              </Link>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               {b.status && <StatusBadge status={b.status} />}
               <span style={{ color: '#8C99B3' }}>{b.floorCount ?? 0}개 층</span>

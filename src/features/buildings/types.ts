@@ -5,4 +5,4 @@ export interface CreateBuildingInput {
   floorCount?: number
 }
 
-export type UpdateBuildingInput = Partial<CreateBuildingInput>
+export type UpdateBuildingInput = Partial<CreateBuildingInput> & { favorite?: boolean }

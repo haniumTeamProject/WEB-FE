@@ -24,6 +24,7 @@ export interface Building {
   address?: string
   floorCount?: number
   favorite?: boolean
+  createdAt?: string
   status?: FloorSetupStatus // 대시보드 대표 상태(선택)
 }
 

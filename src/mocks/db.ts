@@ -49,12 +49,14 @@ export const db: {
       address: '경기도 화성시 봉담읍 와우안길 17',
       floorCount: 1,
       favorite: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
     },
     {
       id: 'ku_gyeongsang',
       code: 'ku_gyeongsang',
       name: '고려대 세종캠퍼스 / 경상대학',
       floorCount: 3,
+      createdAt: '2026-08-09T09:00:00.000Z',
     },
     {
       id: 'bundang_cha',
@@ -62,6 +64,7 @@ export const db: {
       name: '분당차병원(본관)',
       floorCount: 5,
       favorite: true,
+      createdAt: '2026-08-10T14:30:00.000Z',
     },
   ],
   floors: {
