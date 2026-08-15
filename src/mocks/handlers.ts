@@ -126,11 +126,11 @@ export const handlers = [
   }),
 
   // ---- 건물 ----
-  // 정책 2.2: 즐겨찾기 우선, 이후 등록일 내림차순
+  // 정책 2.2: 즐겨찾기 우선, 즐겨찾기/일반 목록 각각 이름 사전순
   http.get(`${base}/buildings`, () => {
     const sorted = [...db.buildings].sort((a, b) => {
       if (!!a.favorite !== !!b.favorite) return a.favorite ? -1 : 1
-      return (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
+      return a.name.localeCompare(b.name, 'ko')
     })
     return HttpResponse.json(sorted.map((b) => ({ ...b, status: computeBuildingStatus(b.id) })))
   }),
