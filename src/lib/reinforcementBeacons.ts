@@ -47,23 +47,34 @@ function labelComponents(w: number, h: number, walkable: Uint8Array): Int32Array
   return labels
 }
 
-// 마스크 픽셀 좌표에서 가장 가까운 통행가능 픽셀의 컴포넌트 라벨을 찾는다(벽 경계에 찍힌 점 보정용).
-function componentAt(px: number, py: number, w: number, h: number, walkable: Uint8Array, labels: Int32Array): number {
+// 마스크 픽셀 좌표에서 가장 가까운 통행가능 픽셀을 찾는다(벽 위·경계에 찍힌 점 보정용). 반경 내에 없으면 null.
+export function nearestWalkable(
+  px: number,
+  py: number,
+  w: number,
+  h: number,
+  walkable: Uint8Array,
+): { x: number; y: number } | null {
   const x0 = Math.round(px)
   const y0 = Math.round(py)
-  for (let r = 0; r <= 20; r++) {
+  for (let r = 0; r <= 40; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue
         const x = x0 + dx
         const y = y0 + dy
         if (x < 0 || y < 0 || x >= w || y >= h) continue
-        const idx = y * w + x
-        if (walkable[idx]) return labels[idx]
+        if (walkable[y * w + x]) return { x, y }
       }
     }
   }
-  return -1
+  return null
+}
+
+// 마스크 픽셀 좌표에서 가장 가까운 통행가능 픽셀의 컴포넌트 라벨을 찾는다(벽 경계에 찍힌 점 보정용).
+function componentAt(px: number, py: number, w: number, h: number, walkable: Uint8Array, labels: Int32Array): number {
+  const nearest = nearestWalkable(px, py, w, h, walkable)
+  return nearest ? labels[nearest.y * w + nearest.x] : -1
 }
 
 // scaleMPerPx는 지도검수 캔버스(마스크 픽셀) 기준으로 캘리브레이션된 값이라,
@@ -114,7 +125,13 @@ export async function planReinforcementBeacons(
     const n = Math.ceil(meters / D_MAX_M) - 1
     for (let i = 1; i <= n; i++) {
       const t = i / (n + 1)
-      plan.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, pair: [a.id, b.id] })
+      const rawX = a.x + (b.x - a.x) * t
+      const rawY = a.y + (b.y - a.y) * t
+      // 직선 보간이라 복도가 휘는 구간에서는 벽 위에 찍힐 수 있다 — 통행 가능 픽셀로 보정한다.
+      const corrected = nearestWalkable(rawX * ratio, rawY * ratio, w, h, walkable)
+      const x = corrected ? corrected.x / ratio : rawX
+      const y = corrected ? corrected.y / ratio : rawY
+      plan.push({ x, y, pair: [a.id, b.id] })
     }
   }
   return plan
