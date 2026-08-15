@@ -12,9 +12,13 @@ export interface MapPoint {
   color: string
   label: string
   draggable?: boolean // 생략 시 true — 자동계산된 점(보강비콘 등) 위치 고정에 사용
+  radius?: number // 생략 시 9
 }
 
-// 설계도 배경 + 드래그 가능한 점들. 비콘·목적지 배치에 공용.
+const MIN_ZOOM = 0.5
+const MAX_ZOOM = 6
+
+// 설계도 배경 + 드래그 가능한 점들. 비콘·목적지·연결자 배치에 공용.
 // 부모(flex-1 등)가 내준 가로 폭을 그대로 채운다 — 폭은 ResizeObserver로 측정.
 export function FloorMapCanvas({
   floorId,
@@ -30,7 +34,11 @@ export function FloorMapCanvas({
   const { data: floorplan } = useFloorplan(floorId)
   const [loadedImg, setLoadedImg] = useState<{ url: string; image: HTMLImageElement } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<Konva.Stage>(null)
   const [width, setWidth] = useState(700)
+  const [zoom, setZoom] = useState(1)
+  const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
+  const [pointDragging, setPointDragging] = useState(false)
 
   useLayoutEffect(() => {
     const el = containerRef.current
@@ -59,6 +67,24 @@ export function FloorMapCanvas({
   const scale = width / DESIGN_W
   const H = displayImg ? Math.round((displayImg.height / displayImg.width) * width) : Math.round(560 * scale)
 
+  function zoomBy(factor: number) {
+    setZoom((z) => Math.min(Math.max(z * factor, MIN_ZOOM), MAX_ZOOM))
+  }
+  function resetView() {
+    setZoom(1)
+    setStagePos({ x: 0, y: 0 })
+  }
+  function onWheel(e: Konva.KonvaEventObject<WheelEvent>) {
+    e.evt.preventDefault()
+    const stage = stageRef.current
+    const pointer = stage?.getPointerPosition()
+    if (!stage || !pointer) return
+    const pointTo = { x: (pointer.x - stagePos.x) / zoom, y: (pointer.y - stagePos.y) / zoom }
+    const nextZoom = Math.min(Math.max(e.evt.deltaY > 0 ? zoom / 1.05 : zoom * 1.05, MIN_ZOOM), MAX_ZOOM)
+    setZoom(nextZoom)
+    setStagePos({ x: pointer.x - pointTo.x * nextZoom, y: pointer.y - pointTo.y * nextZoom })
+  }
+
   // 기존 점(드래그) 클릭은 무시하고, 빈 배경을 클릭했을 때만 배치 좌표로 알린다.
   function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
     if (!onCanvasClick) return
@@ -66,7 +92,9 @@ export function FloorMapCanvas({
     if (!stage || e.target !== stage) return
     const pos = stage.getPointerPosition()
     if (!pos) return
-    onCanvasClick(snapToGrid(Math.round(pos.x / scale)), snapToGrid(Math.round(pos.y / scale)))
+    const localX = (pos.x - stagePos.x) / zoom
+    const localY = (pos.y - stagePos.y) / zoom
+    onCanvasClick(snapToGrid(Math.round(localX / scale)), snapToGrid(Math.round(localY / scale)))
   }
 
   if (!floorplan) {
@@ -84,10 +112,22 @@ export function FloorMapCanvas({
   return (
     <div
       ref={containerRef}
-      className="w-full border border-line rounded-lg overflow-hidden bg-white"
+      className="relative w-full border border-line rounded-lg overflow-hidden bg-white"
       style={{ cursor: onCanvasClick ? 'crosshair' : undefined }}
     >
-      <Stage width={width} height={H} onClick={handleStageClick}>
+      <Stage
+        ref={stageRef}
+        width={width}
+        height={H}
+        scaleX={zoom}
+        scaleY={zoom}
+        x={stagePos.x}
+        y={stagePos.y}
+        draggable={!pointDragging}
+        onDragEnd={(e) => setStagePos({ x: e.target.x(), y: e.target.y() })}
+        onWheel={onWheel}
+        onClick={handleStageClick}
+      >
         <Layer listening={false}>{displayImg && <KonvaImage image={displayImg} width={width} height={H} />}</Layer>
         <Layer>
           {points.map((p) => (
@@ -95,18 +135,24 @@ export function FloorMapCanvas({
               <Circle
                 x={p.x * scale}
                 y={p.y * scale}
-                radius={9}
+                radius={p.radius ?? 9}
                 fill={p.color}
                 stroke="#fff"
                 strokeWidth={2}
                 draggable={!!onMove && p.draggable !== false}
-                onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) =>
+                onDragStart={(e) => {
+                  e.cancelBubble = true
+                  setPointDragging(true)
+                }}
+                onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) => {
+                  e.cancelBubble = true
+                  setPointDragging(false)
                   onMove?.(
                     p.id,
                     snapToGrid(Math.round(e.target.x() / scale)),
                     snapToGrid(Math.round(e.target.y() / scale)),
                   )
-                }
+                }}
               />
               <Text
                 x={p.x * scale + 12}
@@ -120,6 +166,30 @@ export function FloorMapCanvas({
           ))}
         </Layer>
       </Stage>
+
+      <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-white/95 border border-line rounded-lg shadow-sm p-1">
+        <button
+          type="button"
+          onClick={() => zoomBy(1 / 1.3)}
+          className="w-7 h-7 rounded-md text-sm font-medium text-body hover:bg-gray-50"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          onClick={resetView}
+          className="px-2 h-7 rounded-md text-[12px] font-medium text-muted hover:bg-gray-50 whitespace-nowrap"
+        >
+          {Math.round(zoom * 100)}%
+        </button>
+        <button
+          type="button"
+          onClick={() => zoomBy(1.3)}
+          className="w-7 h-7 rounded-md text-sm font-medium text-body hover:bg-gray-50"
+        >
+          +
+        </button>
+      </div>
     </div>
   )
 }

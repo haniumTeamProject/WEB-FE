@@ -189,6 +189,7 @@ export default function BeaconListPage() {
       color: TYPE_COLOR[b.type],
       label: b.name,
       draggable: b.type === 'semantic', // 보강비콘은 자동계산된 위치라 드래그로 옮기지 않는다
+      radius: 5,
     }))
   if (pendingPos) {
     points.push({
@@ -197,6 +198,7 @@ export default function BeaconListPage() {
       y: pendingPos.y,
       color: '#8C99B3',
       label: name.trim() || '새 위치',
+      radius: 5,
     })
   }
 
