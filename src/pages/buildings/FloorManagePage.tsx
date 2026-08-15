@@ -21,7 +21,9 @@ export default function FloorManagePage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null)
 
   const parsed = Number(floorNo)
-  const valid = floorNo !== '' && Number.isInteger(parsed) && parsed >= 1
+  const isPositiveInt = floorNo !== '' && Number.isInteger(parsed) && parsed >= 1
+  const isDuplicate = isPositiveInt && (floors ?? []).some((f) => f.floor === parsed)
+  const valid = isPositiveInt && !isDuplicate
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -52,8 +54,11 @@ export default function FloorManagePage() {
               onChange={(e) => setFloorNo(e.target.value)}
             />
             <div style={{ fontSize: 13, color: '#8C99B3' }}>
-              major (자동): <strong>{valid ? majorForFloor(parsed) : '—'}</strong>
+              major (자동): <strong>{isPositiveInt ? majorForFloor(parsed) : '—'}</strong>
             </div>
+            {isDuplicate && (
+              <p style={{ fontSize: 13, color: '#DC4C4C', margin: 0 }}>이미 등록된 층입니다.</p>
+            )}
             <Button type="submit" disabled={!valid || createFloor.isPending} style={{ width: 160 }}>
               층 추가
             </Button>
