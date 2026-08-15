@@ -17,6 +17,7 @@ export interface MapPoint {
   label: string
   draggable?: boolean // 생략 시 true — 자동계산된 점(보강비콘 등) 위치 고정에 사용
   radius?: number // 생략 시 9
+  radiusHintPx?: number // 설계도(900) 좌표 기준 반경 — 배치 중 커버리지 가늠용 반투명 원(예: 6m)
 }
 
 const MIN_ZOOM = 0.5
@@ -153,6 +154,18 @@ export function FloorMapCanvas({
         <Layer>
           {points.map((p) => (
             <Fragment key={p.id}>
+              {p.radiusHintPx != null && (
+                <Circle
+                  x={p.x * scale}
+                  y={p.y * scale}
+                  radius={p.radiusHintPx * scale}
+                  fill="rgba(75,112,229,0.08)"
+                  stroke="rgba(75,112,229,0.35)"
+                  strokeWidth={1}
+                  dash={[4, 4]}
+                  listening={false}
+                />
+              )}
               <Circle
                 x={p.x * scale}
                 y={p.y * scale}

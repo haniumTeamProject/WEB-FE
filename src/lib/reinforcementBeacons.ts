@@ -7,7 +7,7 @@ import type { FloorMask } from '@/features/mapEditor/api'
 import { MAP_DESIGN_W } from './constants'
 import { rasterizeMask } from './maskRaster'
 
-const D_MAX_M = 6
+export const D_MAX_M = 6
 
 export interface SemanticPoint {
   id: string

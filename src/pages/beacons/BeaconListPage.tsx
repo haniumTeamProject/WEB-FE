@@ -20,10 +20,10 @@ import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { AsyncState } from '@/components/ui/AsyncState'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { BEACON_TYPE_COLOR as TYPE_COLOR, BEACON_TYPE_LABEL as TYPE_LABEL } from '@/lib/constants'
+import { BEACON_TYPE_COLOR as TYPE_COLOR, BEACON_TYPE_LABEL as TYPE_LABEL, MAP_DESIGN_W } from '@/lib/constants'
 import { diffImport, parseMappinProjectFile, toDesignCoords } from '@/lib/mapImport'
 import type { ImportPlan } from '@/lib/mapImport'
-import { planReinforcementBeacons } from '@/lib/reinforcementBeacons'
+import { D_MAX_M, planReinforcementBeacons } from '@/lib/reinforcementBeacons'
 import type { ReinforcementPlanItem } from '@/lib/reinforcementBeacons'
 
 const PENDING_ID = '__pending__'
@@ -192,6 +192,10 @@ export default function BeaconListPage() {
       radius: 5,
     }))
   if (pendingPos) {
+    // 배치 중인 점 주변에 D_max(6m) 커버리지 원을 보여준다 — 마스크·축척이 있어야 실거리 환산 가능
+    const maskRatio = mask ? mask.width / MAP_DESIGN_W : null
+    const radiusHintPx =
+      maskRatio && scale ? D_MAX_M / (maskRatio * scale.scaleMPerPx) : undefined
     points.push({
       id: PENDING_ID,
       x: pendingPos.x,
@@ -199,6 +203,7 @@ export default function BeaconListPage() {
       color: '#8C99B3',
       label: name.trim() || '새 위치',
       radius: 5,
+      radiusHintPx,
     })
   }
 
