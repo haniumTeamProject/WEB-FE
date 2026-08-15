@@ -36,15 +36,6 @@ export default function ConnectorPage() {
 
   const valid = name.trim() !== '' && selected.length > 0
 
-  const sortedFloors = [...(floors ?? [])].sort((a, b) => a.floor - b.floor)
-  const missingCount = (connectors ?? []).reduce((sum, c) => {
-    const missingOnFloor = c.floors.filter((floorNum) => {
-      const floor = sortedFloors.find((f) => f.floor === floorNum)
-      return floor && !c.positions?.some((p) => p.floorId === floor.id)
-    })
-    return sum + missingOnFloor.length
-  }, 0)
-
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     if (!valid) return
@@ -168,59 +159,15 @@ export default function ConnectorPage() {
       </div>
 
       <Card className="mt-6">
-        <h3>연결자×층 매트릭스</h3>
-        <p className="text-muted text-[13px] mb-3">
-          {missingCount > 0 ? `${missingCount}개 결손` : '결손 없음'} — 운행층인데 좌표가 없는 칸입니다.
+        <h3>연결자 검수</h3>
+        <p className="text-muted text-[13px] mt-2">
+          연결자×층 매트릭스로 각 층에 좌표가 빠짐없이 등록됐는지 확인하세요.
         </p>
-        {connectors && connectors.length > 0 && sortedFloors.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr>
-                  <th className="text-left p-2 border-b border-line">연결자</th>
-                  {sortedFloors.map((f) => (
-                    <th key={f.id} className="p-2 border-b border-line text-center whitespace-nowrap">
-                      {f.floor}층
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {connectors.map((c) => (
-                  <tr key={c.id}>
-                    <td className="p-2 border-b border-line whitespace-nowrap">{c.name}</td>
-                    {sortedFloors.map((f) => {
-                      if (!c.floors.includes(f.floor)) {
-                        return (
-                          <td key={f.id} className="p-2 border-b border-line text-center text-muted">
-                            –
-                          </td>
-                        )
-                      }
-                      const placed = c.positions?.some((p) => p.floorId === f.id)
-                      return (
-                        <td key={f.id} className="p-2 border-b border-line text-center">
-                          {placed ? (
-                            <span style={{ color: '#4BAE72', fontWeight: 600 }}>✓</span>
-                          ) : (
-                            <Link
-                              to={`/buildings/${buildingId}/floors/${f.id}/connectors`}
-                              style={{ color: '#DC4C4C', fontWeight: 600 }}
-                            >
-                              결손
-                            </Link>
-                          )}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-muted text-[13px]">연결자와 층이 모두 등록돼야 매트릭스가 표시됩니다.</p>
-        )}
+        <Link to={`/buildings/${buildingId}/connectors/review`} className="inline-block mt-3">
+          <Button variant="outline" style={{ height: 36, padding: '0 14px' }}>
+            연결자 검수 →
+          </Button>
+        </Link>
       </Card>
 
       <Card className="mt-6">

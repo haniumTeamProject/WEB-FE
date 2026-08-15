@@ -13,6 +13,7 @@ import BuildingDetailPage from '@/pages/buildings/BuildingDetailPage'
 import BuildingFormPage from '@/pages/buildings/BuildingFormPage'
 import FloorManagePage from '@/pages/buildings/FloorManagePage'
 import ConnectorPage from '@/pages/connectors/ConnectorPage'
+import ConnectorReviewPage from '@/pages/connectors/ConnectorReviewPage'
 import FloorplanUploadPage from '@/pages/floorplan/FloorplanUploadPage'
 // Konva 에디터는 무거워서 이 라우트에서만 로드 (코드 스플리팅)
 const MapReviewPage = lazy(() => import('@/pages/map-editor/MapReviewPage'))
@@ -56,6 +57,7 @@ export const router = createBrowserRouter([
       { path: '/buildings/:buildingId', element: <BuildingDetailPage /> },
       { path: '/buildings/:buildingId/floors', element: <FloorManagePage /> },
       { path: '/buildings/:buildingId/connectors', element: <ConnectorPage /> },
+      { path: '/buildings/:buildingId/connectors/review', element: <ConnectorReviewPage /> },
       { path: '/buildings/:buildingId/floors/:floorId/floorplan', element: <FloorplanUploadPage /> },
       {
         path: '/buildings/:buildingId/floors/:floorId/map',
