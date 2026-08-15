@@ -43,6 +43,7 @@ export default function MapReviewPage() {
   const drawingRef = useRef(false)
   const lastRef = useRef<{ x: number; y: number } | null>(null)
   const scalePointsRef = useRef<{ x: number; y: number }[]>([]) // 축척 측정용 두 점(계산 후 저장하지 않음)
+  const scaleHoverRef = useRef<{ x: number; y: number } | null>(null) // 두 번째 점 스냅 미리보기
   const areaStartRef = useRef<{ x: number; y: number } | null>(null) // 사각형 채우기/지우개 드래그 시작점
   const areaCurrentRef = useRef<{ x: number; y: number } | null>(null)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
@@ -98,20 +99,45 @@ export default function MapReviewPage() {
     drawAreaOverlay(ctx)
   }
 
-  // 측정 중인 축척 두 점 + 연결선을 마스크 위에 그림(저장 대상 아님, 화면 표시용)
+  // 두 번째 점을 첫 점 기준 수평/수직 축에 스냅(움직임이 큰 축을 따라간다)
+  function snapAxis(anchor: { x: number; y: number }, raw: { x: number; y: number }) {
+    const dx = raw.x - anchor.x
+    const dy = raw.y - anchor.y
+    return Math.abs(dx) >= Math.abs(dy) ? { x: raw.x, y: anchor.y } : { x: anchor.x, y: raw.y }
+  }
+
+  // 측정 중인 축척 두 점 + 연결선 + 실시간 px 거리 라벨을 마스크 위에 그림(저장 대상 아님, 화면 표시용)
   function drawScaleOverlay(ctx: CanvasRenderingContext2D) {
     const pts = scalePointsRef.current
+    const endPt = pts.length === 2 ? pts[1] : scaleHoverRef.current
     if (pts.length === 0) return
     ctx.save()
-    ctx.fillStyle = '#DC4C4C'
-    ctx.strokeStyle = '#DC4C4C'
-    ctx.lineWidth = 2
-    if (pts.length === 2) {
+    if (pts.length >= 1 && endPt) {
+      ctx.strokeStyle = '#DC4C4C'
+      ctx.lineWidth = 2
+      ctx.setLineDash(pts.length === 2 ? [] : [6, 5])
       ctx.beginPath()
       ctx.moveTo(pts[0].x, pts[0].y)
-      ctx.lineTo(pts[1].x, pts[1].y)
+      ctx.lineTo(endPt.x, endPt.y)
       ctx.stroke()
+      ctx.setLineDash([])
+
+      const dist = Math.round(Math.hypot(endPt.x - pts[0].x, endPt.y - pts[0].y))
+      const label = `${dist}px`
+      const midx = (pts[0].x + endPt.x) / 2
+      const midy = (pts[0].y + endPt.y) / 2
+      ctx.font = '600 11px -apple-system, sans-serif'
+      const tw = ctx.measureText(label).width
+      ctx.fillStyle = 'rgba(255,255,255,0.9)'
+      ctx.fillRect(midx - tw / 2 - 4, midy - 20, tw + 8, 15)
+      ctx.fillStyle = '#DC4C4C'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(label, midx, midy - 12)
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'alphabetic'
     }
+    ctx.fillStyle = '#DC4C4C'
     for (const p of pts) {
       ctx.beginPath()
       ctx.arc(p.x, p.y, 5, 0, Math.PI * 2)
@@ -148,6 +174,7 @@ export default function MapReviewPage() {
   // 도구 전환 시 진행 중이던 측정/드래그 상태는 버림
   function selectTool(mode: Tool) {
     scalePointsRef.current = []
+    scaleHoverRef.current = null
     areaStartRef.current = null
     areaCurrentRef.current = null
     setTool(mode)
@@ -422,6 +449,11 @@ export default function MapReviewPage() {
     if ((tool === 'drawArea' || tool === 'erase') && areaStartRef.current) {
       areaCurrentRef.current = getXY(e)
       redraw()
+      return
+    }
+    if (tool === 'scale' && scalePointsRef.current.length === 1) {
+      scaleHoverRef.current = snapAxis(scalePointsRef.current[0], getXY(e))
+      redraw()
     }
   }
   function onMouseUp() {
@@ -452,7 +484,13 @@ export default function MapReviewPage() {
     const { x, y } = getXY(e)
     if (tool === 'scale') {
       const pts = scalePointsRef.current
-      scalePointsRef.current = pts.length >= 2 ? [{ x, y }] : [...pts, { x, y }]
+      if (pts.length === 1) {
+        const snapped = scaleHoverRef.current ?? { x, y }
+        scalePointsRef.current = [pts[0], snapped]
+        scaleHoverRef.current = null
+      } else {
+        scalePointsRef.current = [{ x, y }]
+      }
       redraw()
       if (scalePointsRef.current.length === 2) {
         setDistanceInput('')
