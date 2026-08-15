@@ -23,6 +23,8 @@ import { LANDMARK_COLOR } from '@/lib/constants'
 import { diffImport, parseMappinProjectFile, toDesignCoords } from '@/lib/mapImport'
 import type { ImportPlan } from '@/lib/mapImport'
 
+const PENDING_ID = '__pending__'
+
 export default function LandmarkPage() {
   const { buildingId = '', floorId = '' } = useParams()
   const { data: building } = useBuilding(buildingId)
@@ -36,23 +38,25 @@ export default function LandmarkPage() {
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [importPlan, setImportPlan] = useState<ImportPlan<Landmark> | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
 
-  const valid = name.trim() !== ''
+  const valid = name.trim() !== '' && !!pendingPos
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!valid) return
+    if (!valid || !pendingPos) return
     create.mutate(
-      { name: name.trim(), category: category.trim() || undefined, x: 450, y: 280 },
+      { name: name.trim(), category: category.trim() || undefined, x: pendingPos.x, y: pendingPos.y },
       {
         onSuccess: () => {
           setName('')
           setCategory('')
+          setPendingPos(null)
         },
       },
     )
@@ -107,6 +111,15 @@ export default function LandmarkPage() {
   const points: MapPoint[] = (landmarks ?? [])
     .filter((l) => l.x != null && l.y != null)
     .map((l) => ({ id: l.id, x: l.x as number, y: l.y as number, color: LANDMARK_COLOR, label: l.name }))
+  if (pendingPos) {
+    points.push({
+      id: PENDING_ID,
+      x: pendingPos.x,
+      y: pendingPos.y,
+      color: '#8C99B3',
+      label: name.trim() || '새 위치',
+    })
+  }
 
   const crumbs = [
     { label: '홈', to: '/' },
@@ -126,10 +139,15 @@ export default function LandmarkPage() {
           <FloorMapCanvas
             floorId={floorId}
             points={points}
-            onMove={(id, x, y) => update.mutate({ landmarkId: id, input: { x, y } })}
+            onMove={(id, x, y) => {
+              if (id === PENDING_ID) setPendingPos({ x, y })
+              else update.mutate({ landmarkId: id, input: { x, y } })
+            }}
+            onCanvasClick={(x, y) => setPendingPos({ x, y })}
           />
           <p className="mt-2 text-[13px] text-muted">
-            사용자가 음성으로 말하는 목적지 후보입니다. 점을 드래그해 위치를 잡으세요.
+            사용자가 음성으로 말하는 목적지 후보입니다. 지도를 클릭해 새 목적지 위치를 지정하고, 점을 드래그해 위치를
+            조정하세요.
           </p>
         </div>
 
@@ -146,6 +164,9 @@ export default function LandmarkPage() {
             <Button type="submit" disabled={!valid || create.isPending}>
               목적지 추가
             </Button>
+            <p className="text-muted text-[13px]">
+              {pendingPos ? '위치가 지정됐습니다. 점을 드래그해 조정할 수 있어요.' : '지도를 클릭해 배치할 위치를 먼저 지정하세요.'}
+            </p>
           </form>
         </Card>
       </div>
