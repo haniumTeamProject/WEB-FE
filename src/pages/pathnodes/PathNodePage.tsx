@@ -158,6 +158,8 @@ export default function PathNodePage() {
   // (렌더 중 상태 조정 — effect 안에서 동기 setState를 피함. https://react.dev/learn/you-might-not-need-an-effect)
   const [viewFloorId, setViewFloorId] = useState(floorId)
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
+  const historyRef = useRef<{ nodes: PathNode[]; edges: PathEdge[] }[]>([])
+  const redoRef = useRef<{ nodes: PathNode[]; edges: PathEdge[] }[]>([])
   if (floorId !== viewFloorId) {
     setViewFloorId(floorId)
     resetView()
@@ -167,13 +169,67 @@ export default function PathNodePage() {
     setMaskDims(stored ? { w: stored.maskW, h: stored.maskH } : null)
   }
 
+  // 층이 바뀌면 되돌리기/다시실행 기록도 초기화한다(ref라 렌더 중이 아니라 커밋 후 effect에서 처리).
+  useEffect(() => {
+    historyRef.current = []
+    redoRef.current = []
+  }, [floorId])
+
   function persist(nextNodes: PathNode[], nextEdges: PathEdge[], dims: { w: number; h: number }) {
     const payload: StoredPathNodes = { nodes: nextNodes, edges: nextEdges, maskW: dims.w, maskH: dims.h }
     localStorage.setItem(storageKey(floorId), JSON.stringify(payload))
   }
 
+  // 지금 상태를 되돌리기 스택에 남긴다 — 다시실행 스택은 새 작업이 생겼으니 비운다.
+  function pushHistory() {
+    historyRef.current.push({ nodes, edges })
+    if (historyRef.current.length > 20) historyRef.current.shift()
+    redoRef.current = []
+  }
+
+  function undo() {
+    if (!maskDims) return
+    const prev = historyRef.current.pop()
+    if (!prev) return
+    redoRef.current.push({ nodes, edges })
+    setNodes(prev.nodes)
+    setEdges(prev.edges)
+    persist(prev.nodes, prev.edges, maskDims)
+  }
+
+  function redo() {
+    if (!maskDims) return
+    const next = redoRef.current.pop()
+    if (!next) return
+    historyRef.current.push({ nodes, edges })
+    setNodes(next.nodes)
+    setEdges(next.edges)
+    persist(next.nodes, next.edges, maskDims)
+  }
+
+  // 되돌리기/다시실행 키보드 단축키(Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z 또는 Ctrl+Y) — 모달이 열려있을 땐 끔
+  useEffect(() => {
+    function handleKeydown(e: KeyboardEvent) {
+      if (confirmSaveOpen) return
+      const key = e.key.toLowerCase()
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && key === 'z') {
+        e.preventDefault()
+        undo()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && ((e.shiftKey && key === 'z') || key === 'y')) {
+        e.preventDefault()
+        redo()
+      }
+    }
+    document.addEventListener('keydown', handleKeydown)
+    return () => document.removeEventListener('keydown', handleKeydown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmSaveOpen, nodes, edges, maskDims])
+
   async function onGenerate() {
     if (!savedMask?.dataUrl) return
+    if (nodes.length > 0) pushHistory() // 처음 생성은 되돌릴 이전 상태가 없으니 건너뜀
     setGenerating(true)
     try {
       const dims = { w: savedMask.width, h: savedMask.height }
@@ -203,6 +259,7 @@ export default function PathNodePage() {
 
   function onNodeMove(id: string, x: number, y: number) {
     if (!maskDims) return
+    pushHistory()
     setNodes((prev) => {
       const next = prev.map((node) => (node.id === id ? { ...node, x, y } : node))
       persist(next, edges, maskDims)
@@ -426,6 +483,15 @@ export default function PathNodePage() {
           <Button className="w-full mt-4" disabled={generating} onClick={onGenerate}>
             {generating ? '생성 중…' : nodes.length ? '경로 노드 다시 생성' : '경로 노드 생성'}
           </Button>
+
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <Button variant="outline" onClick={undo} title="실행 취소 (Ctrl+Z)">
+              ← 되돌리기
+            </Button>
+            <Button variant="outline" onClick={redo} title="다시 실행 (Ctrl+Shift+Z)">
+              다시 실행 →
+            </Button>
+          </div>
 
           <div className="mt-4 pt-4 border-t border-line">
             <span className="block text-[13px] text-muted mb-2">화면 확대/축소</span>
