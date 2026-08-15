@@ -16,7 +16,7 @@ import { StepFooter } from '@/components/layout/StepNav'
 const CANVAS_W = 760
 const FILL: [number, number, number, number] = [75, 112, 229, 120] // 이동영역(반투명 파랑)
 const BARRIER_R = 4 // 벽 펜 반경(px)
-const ZOOM_MIN = 0.2
+const ZOOM_MIN = 1 // 기본 화면(맞춤 배율) 밑으로는 축소 못 하게
 const ZOOM_MAX = 8
 
 type Tool = 'fill' | 'drawArea' | 'wall' | 'erase' | 'scale'
@@ -56,11 +56,11 @@ export default function MapReviewPage() {
   const [distanceError, setDistanceError] = useState<string | null>(null)
   const [containerWidth, setContainerWidth] = useState(700)
   const [zoom, setZoom] = useState(1)
+  const [zoomOrigin, setZoomOrigin] = useState('50% 50%') // 휠 확대 시 커서 위치를 기준점으로
   const [gapFillM, setGapFillM] = useState('0.3')
   const [noiseRemoveM, setNoiseRemoveM] = useState('0.3')
 
   const fitScale = dims ? containerWidth / dims.w : 1
-  const dispScale = fitScale * zoom
 
   function rebuildMask() {
     const mask = maskCanvasRef.current
@@ -392,13 +392,17 @@ export default function MapReviewPage() {
     return () => ro.disconnect()
   }, [])
 
-  // 휠로 확대·축소(다른 지도 화면들과 동일하게 Ctrl 없이 바로 동작) — React 합성 wheel 이벤트는
-  // 기본적으로 passive라 preventDefault가 안 먹어서 네이티브로 붙인다.
+  // 휠로 확대·축소(다른 지도 화면들과 동일하게 Ctrl 없이 바로 동작, 컨테이너는 고정한 채 설계도만 확대) —
+  // React 합성 wheel 이벤트는 기본적으로 passive라 preventDefault가 안 먹어서 네이티브로 붙인다.
   useEffect(() => {
     const el = stageRef.current
     if (!el) return
     function handleWheel(e: WheelEvent) {
       e.preventDefault()
+      const rect = el!.getBoundingClientRect()
+      const px = ((e.clientX - rect.left) / rect.width) * 100
+      const py = ((e.clientY - rect.top) / rect.height) * 100
+      setZoomOrigin(`${px}% ${py}%`)
       setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))))
     }
     el.addEventListener('wheel', handleWheel, { passive: false })
@@ -406,9 +410,11 @@ export default function MapReviewPage() {
   }, [])
 
   function zoomBy(factor: number) {
+    setZoomOrigin('50% 50%')
     setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * factor)))
   }
   function resetZoom() {
+    setZoomOrigin('50% 50%')
     setZoom(1)
   }
 
@@ -639,8 +645,8 @@ export default function MapReviewPage() {
         <div className="flex-1 min-w-0">
           <div
             ref={stageRef}
-            className="relative w-full border border-line rounded-lg bg-white overflow-auto"
-            style={{ cursor: 'crosshair', maxHeight: '70vh' }}
+            className="relative w-full border border-line rounded-lg bg-white overflow-hidden"
+            style={{ cursor: 'crosshair', height: dims ? dims.h * fitScale : undefined }}
           >
             {dims && (
               <canvas
@@ -652,7 +658,14 @@ export default function MapReviewPage() {
                 onMouseMove={onMouseMove}
                 onMouseUp={onMouseUp}
                 onMouseLeave={onMouseUp}
-                style={{ display: 'block', margin: '0 auto', width: dims.w * dispScale, height: dims.h * dispScale }}
+                style={{
+                  display: 'block',
+                  margin: '0 auto',
+                  width: dims.w * fitScale,
+                  height: dims.h * fitScale,
+                  transform: `scale(${zoom})`,
+                  transformOrigin: zoomOrigin,
+                }}
               />
             )}
             <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-white/95 border border-line rounded-lg shadow-sm p-1">

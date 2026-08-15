@@ -20,7 +20,7 @@ export interface MapPoint {
   radiusHintPx?: number // 설계도(900) 좌표 기준 반경 — 배치 중 커버리지 가늠용 반투명 원(예: 6m)
 }
 
-const MIN_ZOOM = 0.5
+const MIN_ZOOM = 1 // 기본 화면(맞춤 배율) 밑으로는 축소 못 하게
 const MAX_ZOOM = 6
 
 // 설계도 배경 + 드래그 가능한 점들. 비콘·목적지·연결자 배치에 공용.

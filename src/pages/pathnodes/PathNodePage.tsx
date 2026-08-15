@@ -121,7 +121,7 @@ export default function PathNodePage() {
   const [zoom, setZoom] = useState(1)
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
   const [nodeDragging, setNodeDragging] = useState(false)
-  const MIN_ZOOM = 0.5
+  const MIN_ZOOM = 1 // 기본 화면(맞춤 배율) 밑으로는 축소 못 하게
   const MAX_ZOOM = 6
 
   function zoomBy(factor: number) {
