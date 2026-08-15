@@ -1,3 +1,5 @@
+import type { AdminRole } from '@/types/domain'
+
 export interface LoginRequest {
   email: string
   password: string
@@ -5,6 +7,9 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   accessToken: string
+  email: string
+  name: string
+  role: AdminRole
 }
 
 export interface SignupRequest {

@@ -6,6 +6,9 @@ export function useLogin() {
     mutationFn: login,
     onSuccess: (data) => {
       localStorage.setItem('accessToken', data.accessToken)
+      localStorage.setItem('adminEmail', data.email)
+      localStorage.setItem('adminName', data.name)
+      localStorage.setItem('adminRole', data.role)
     },
   })
 }

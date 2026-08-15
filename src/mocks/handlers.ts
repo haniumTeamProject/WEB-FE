@@ -56,7 +56,18 @@ const base = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 export const handlers = [
   // ---- 인증 ----
-  http.post(`${base}/admin/auth/login`, () => HttpResponse.json({ accessToken: 'mock-token' })),
+  http.post(`${base}/admin/auth/login`, async ({ request }) => {
+    const body = (await request.json()) as { email: string; password: string }
+    // 데모 목업: 비밀번호는 검증하지 않고, 입력한 이메일과 일치하는 계정이 있으면 그 정보를 돌려준다
+    // (없으면 슈퍼관리자로 대체) — 실제 백엔드에서는 토큰 발급 시 본인 계정 정보를 내려주면 됨.
+    const admin = db.admins.find((a) => a.email === body.email) ?? db.admins.find((a) => a.role === 'super_admin')
+    return HttpResponse.json({
+      accessToken: 'mock-token',
+      email: admin?.email ?? body.email,
+      name: admin?.name ?? '관리자',
+      role: admin?.role ?? 'admin',
+    })
+  }),
 
   http.post(`${base}/admin/auth/signup`, async ({ request }) => {
     const body = (await request.json()) as {
