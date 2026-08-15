@@ -79,13 +79,14 @@ function LandmarkEditForm({
   deleting,
 }: {
   landmark: Landmark
-  onSubmit: (input: { name: string }) => void
+  onSubmit: (input: { name: string; category?: string }) => void
   onDelete: () => void
   onCancel: () => void
   submitting: boolean
   deleting: boolean
 }) {
   const [name, setName] = useState(landmark.name)
+  const [category, setCategory] = useState(landmark.category ?? '')
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
   const valid = name.trim() !== ''
@@ -93,13 +94,14 @@ function LandmarkEditForm({
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!valid) return
-    onSubmit({ name: name.trim() })
+    onSubmit({ name: name.trim(), category: category.trim() || undefined })
   }
 
   return (
     <Card style={{ maxWidth: 560, margin: '0 auto' }}>
       <form onSubmit={handleSubmit} className="grid gap-4">
         <Input label="이름" value={name} onChange={(e) => setName(e.target.value)} />
+        <Input label="카테고리" placeholder="강의실" value={category} onChange={(e) => setCategory(e.target.value)} />
         {landmark.sourceLabel && (
           <div>
             <span className="block text-[13px] text-muted mb-2">지도 라벨 (자동)</span>

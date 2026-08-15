@@ -19,7 +19,7 @@ import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { AsyncState } from '@/components/ui/AsyncState'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { LANDMARK_TYPE_COLOR as TYPE_COLOR, LANDMARK_TYPE_LABEL as TYPE_LABEL } from '@/lib/constants'
+import { LANDMARK_COLOR } from '@/lib/constants'
 import { diffImport, parseMappinProjectFile, toDesignCoords } from '@/lib/mapImport'
 import type { ImportPlan } from '@/lib/mapImport'
 
@@ -34,6 +34,7 @@ export default function LandmarkPage() {
   const del = useDeleteLandmark(floorId)
 
   const [name, setName] = useState('')
+  const [category, setCategory] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -47,10 +48,11 @@ export default function LandmarkPage() {
     e.preventDefault()
     if (!valid) return
     create.mutate(
-      { name: name.trim(), type: 'room', x: 450, y: 280 },
+      { name: name.trim(), category: category.trim() || undefined, x: 450, y: 280 },
       {
         onSuccess: () => {
           setName('')
+          setCategory('')
         },
       },
     )
@@ -81,7 +83,6 @@ export default function LandmarkPage() {
       for (const source of importPlan.toCreate) {
         await create.mutateAsync({
           name: source.label,
-          type: 'room',
           sourceUid: source.uid,
           sourceLabel: source.label,
           x: source.x,
@@ -105,7 +106,7 @@ export default function LandmarkPage() {
 
   const points: MapPoint[] = (landmarks ?? [])
     .filter((l) => l.x != null && l.y != null)
-    .map((l) => ({ id: l.id, x: l.x as number, y: l.y as number, color: TYPE_COLOR[l.type], label: l.name }))
+    .map((l) => ({ id: l.id, x: l.x as number, y: l.y as number, color: LANDMARK_COLOR, label: l.name }))
 
   const crumbs = [
     { label: '홈', to: '/' },
@@ -136,6 +137,12 @@ export default function LandmarkPage() {
           <h3>목적지 추가</h3>
           <form onSubmit={onSubmit} className="grid gap-3">
             <Input label="이름" placeholder="406호" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              label="카테고리"
+              placeholder="강의실"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            />
             <Button type="submit" disabled={!valid || create.isPending}>
               목적지 추가
             </Button>
@@ -170,14 +177,14 @@ export default function LandmarkPage() {
           {!landmarksLoading && !landmarksError && landmarks?.map((l) => (
             <div key={l.id} className="flex items-center justify-between p-3 border border-line rounded-lg">
               <div className="flex items-center gap-3">
-                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: TYPE_COLOR[l.type] }} />
+                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: LANDMARK_COLOR }} />
                 <span className="font-medium">{l.name}</span>
                 {l.sourceLabel && (
                   <span className="text-[11px] text-muted border border-line rounded px-1.5 py-0.5">
                     {l.sourceLabel}
                   </span>
                 )}
-                <span className="text-[13px] text-muted">{TYPE_LABEL[l.type]}</span>
+                {l.category && <span className="text-[13px] text-muted">{l.category}</span>}
               </div>
               <div className="flex gap-2">
                 <Link to={`/buildings/${buildingId}/floors/${floorId}/landmarks/${l.id}`}>
@@ -217,7 +224,7 @@ export default function LandmarkPage() {
         title="지도 데이터를 가져올까요?"
         description={
           importPlan
-            ? `생성 ${importPlan.toCreate.length} · 갱신 ${importPlan.toUpdate.length} · 삭제 ${importPlan.toDelete.length} — 기존에 입력한 이름·타입은 유지됩니다.`
+            ? `생성 ${importPlan.toCreate.length} · 갱신 ${importPlan.toUpdate.length} · 삭제 ${importPlan.toDelete.length} — 기존에 입력한 이름·카테고리는 유지됩니다.`
             : undefined
         }
         confirmLabel="가져오기"

@@ -1,9 +1,9 @@
 import { apiClient } from '@/lib/apiClient'
-import type { Landmark, LandmarkType } from '@/types/domain'
+import type { Landmark } from '@/types/domain'
 
 export interface CreateLandmarkInput {
   name: string
-  type: LandmarkType
+  category?: string
   x?: number
   y?: number
   sourceUid?: string
@@ -12,7 +12,7 @@ export interface CreateLandmarkInput {
 
 export type UpdateLandmarkInput = Partial<{
   name: string
-  type: LandmarkType
+  category: string
   x: number
   y: number
   sourceLabel: string

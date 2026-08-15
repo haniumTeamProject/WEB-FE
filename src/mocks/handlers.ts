@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import { db, nextId } from './db'
 import { majorForFloor } from '@/lib/utils'
-import type { Admin, Beacon, BeaconType, Building, Connector, Floor, FloorSetupStatus, Landmark, LandmarkType } from '@/types/domain'
+import type { Admin, Beacon, BeaconType, Building, Connector, Floor, FloorSetupStatus, Landmark } from '@/types/domain'
 
 function floorMajor(floorId: string): number {
   for (const list of Object.values(db.floors)) {
@@ -341,7 +341,7 @@ export const handlers = [
     const floorId = params.floorId as string
     const body = (await request.json()) as {
       name: string
-      type: LandmarkType
+      category?: string
       x?: number
       y?: number
       sourceUid?: string
@@ -351,7 +351,7 @@ export const handlers = [
       id: nextId('lm'),
       floorId,
       name: body.name,
-      type: body.type,
+      category: body.category,
       x: body.x,
       y: body.y,
       sourceUid: body.sourceUid,

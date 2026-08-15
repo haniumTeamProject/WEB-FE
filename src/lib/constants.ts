@@ -1,4 +1,4 @@
-import type { BeaconType, FloorSetupStatus, LandmarkType } from '@/types/domain'
+import type { BeaconType, FloorSetupStatus } from '@/types/domain'
 
 // 브랜드 색
 export const NAVY = '#3B5AA8'
@@ -17,19 +17,8 @@ export const BEACON_TYPE_COLOR: Record<BeaconType, string> = {
   reinforcement: '#29AD72',
 }
 
-// 랜드마크(목적지) 타입 — 마찬가지로 지도 색과 폼 select 색을 공유
-export const LANDMARK_TYPE_LABEL: Record<LandmarkType, string> = {
-  room: '강의실/방',
-  restroom: '화장실',
-  facility: '편의시설',
-  entrance: '출입구',
-}
-export const LANDMARK_TYPE_COLOR: Record<LandmarkType, string> = {
-  room: '#4B70E5',
-  restroom: '#29AD72',
-  facility: '#8C5BD6',
-  entrance: '#F2992E',
-}
+// 랜드마크(목적지) 지도 점 색 — 카테고리가 자유 입력이라 고정 색 하나만 씀
+export const LANDMARK_COLOR = '#4B70E5'
 
 // 수직연결자 지도 점 색 — PathNodePage의 연결자 입구 색(ENTRANCE_COLOR.connector)과 동일하게 맞춤
 export const CONNECTOR_COLOR = '#2563eb'

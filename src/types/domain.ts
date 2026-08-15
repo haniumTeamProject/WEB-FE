@@ -86,13 +86,11 @@ export interface Floorplan {
   extracted: boolean // 벽·이동영역 자동 추출 완료 여부
 }
 
-export type LandmarkType = 'room' | 'restroom' | 'facility' | 'entrance'
-
 export interface Landmark {
   id: string
   floorId: string
   name: string // 사용자가 음성으로 말하는 목적지
-  type: LandmarkType
+  category?: string // 자유 입력 분류(예: 강의실, 화장실) — 고정 목록 아님
   visualTagId?: string // 시각태그 연결
   x?: number // 설계도 좌표(900 기준)
   y?: number
