@@ -75,7 +75,6 @@ export const handlers = [
       password: string
       name: string
       org: string
-      building: string
       officialDocUrl: string
     }
     if (db.admins.some((a) => a.email === body.email)) {
@@ -86,7 +85,6 @@ export const handlers = [
       email: body.email,
       name: body.name,
       org: body.org,
-      building: body.building,
       status: 'pending',
       role: 'admin',
       officialDocUrl: body.officialDocUrl,

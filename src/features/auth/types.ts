@@ -17,6 +17,5 @@ export interface SignupRequest {
   password: string
   name: string
   org: string // 소속 기관
-  building: string // 담당 건물
   officialDocUrl: string // 기관 공문(직인) — base64 data URL
 }

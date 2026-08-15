@@ -8,7 +8,6 @@ import { readFileAsDataURL } from '@/lib/file'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 
-// 소속·담당 건물 둘 다 정책(1.1 회원가입)상 필수 첨부 항목이라 와이어프레임에 없어도 유지한다.
 const schema = z
   .object({
     email: z.string().min(1, '이메일을 입력하세요').email('올바른 이메일 형식이 아닙니다'),
@@ -16,7 +15,6 @@ const schema = z
     passwordConfirm: z.string().min(1, '비밀번호를 다시 입력하세요'),
     name: z.string().min(1, '이름을 입력하세요'),
     org: z.string().min(1, '소속 기관을 입력하세요'),
-    building: z.string().min(1, '담당 건물을 입력하세요'),
   })
   .refine((v) => v.password === v.passwordConfirm, {
     message: '비밀번호가 일치하지 않습니다',
@@ -50,7 +48,6 @@ export default function SignupPage() {
         password: values.password,
         name: values.name,
         org: values.org,
-        building: values.building,
         officialDocUrl,
       },
       {
@@ -80,12 +77,6 @@ export default function SignupPage() {
         placeholder="예: 수원대학교 시설관리팀"
         error={errors.org?.message}
         {...register('org')}
-      />
-      <Input
-        label="담당 건물"
-        placeholder="예: ICT융합대학"
-        error={errors.building?.message}
-        {...register('building')}
       />
       <div>
         <span style={{ display: 'block', fontSize: 13, color: '#8C99B3', marginBottom: 8 }}>
