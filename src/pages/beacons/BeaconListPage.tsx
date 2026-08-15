@@ -9,7 +9,8 @@ import {
   useDeleteBeacon,
   useUpdateBeacon,
 } from '@/features/beacons/hooks'
-import type { Beacon, BeaconType } from '@/types/domain'
+import { useMask, useScale } from '@/features/mapEditor/hooks'
+import type { Beacon } from '@/types/domain'
 import { FloorMapCanvas } from '@/components/map/FloorMapCanvas'
 import type { MapPoint } from '@/components/map/FloorMapCanvas'
 import { Card } from '@/components/ui/Card'
@@ -19,16 +20,12 @@ import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { AsyncState } from '@/components/ui/AsyncState'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { ColorSelect } from '@/components/ui/ColorSelect'
 import { BEACON_TYPE_COLOR as TYPE_COLOR, BEACON_TYPE_LABEL as TYPE_LABEL } from '@/lib/constants'
 import { diffImport, parseMappinProjectFile, toDesignCoords } from '@/lib/mapImport'
 import type { ImportPlan } from '@/lib/mapImport'
+import { planReinforcementBeacons } from '@/lib/reinforcementBeacons'
+import type { ReinforcementPlanItem } from '@/lib/reinforcementBeacons'
 
-const TYPE_OPTIONS = (Object.keys(TYPE_LABEL) as BeaconType[]).map((value) => ({
-  value,
-  label: TYPE_LABEL[value],
-  color: TYPE_COLOR[value],
-}))
 const PENDING_ID = '__pending__'
 
 export default function BeaconListPage() {
@@ -37,6 +34,8 @@ export default function BeaconListPage() {
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
   const { data: beacons, isLoading: beaconsLoading, isError: beaconsError, refetch: refetchBeacons } = useBeacons(floorId)
+  const { data: mask } = useMask(floorId)
+  const { data: scale } = useScale(floorId)
   const create = useCreateBeacon(floorId)
   const update = useUpdateBeacon(floorId)
   const del = useDeleteBeacon(floorId)
@@ -44,7 +43,6 @@ export default function BeaconListPage() {
   const [name, setName] = useState('')
   const [mac, setMac] = useState('')
   const [minor, setMinor] = useState('')
-  const [type, setType] = useState<BeaconType>('semantic')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null)
 
@@ -52,6 +50,11 @@ export default function BeaconListPage() {
   const [importPlan, setImportPlan] = useState<ImportPlan<Beacon> | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+
+  const [reinforcePlan, setReinforcePlan] = useState<ReinforcementPlanItem[] | null>(null)
+  const [reinforceError, setReinforceError] = useState<string | null>(null)
+  const [planning, setPlanning] = useState(false)
+  const [applyingReinforce, setApplyingReinforce] = useState(false)
 
   const valid = name.trim() !== '' && minor !== '' && Number.isInteger(Number(minor)) && !!pendingPos
 
@@ -63,7 +66,7 @@ export default function BeaconListPage() {
         name: name.trim(),
         mac: mac.trim() || undefined,
         minor: Number(minor),
-        type,
+        type: 'semantic',
         x: pendingPos.x,
         y: pendingPos.y,
       },
@@ -72,11 +75,60 @@ export default function BeaconListPage() {
           setName('')
           setMac('')
           setMinor('')
-          setType('semantic')
           setPendingPos(null)
         },
       },
     )
+  }
+
+  async function onPlanReinforce() {
+    if (!mask || !scale) return
+    setReinforceError(null)
+    setPlanning(true)
+    try {
+      const semanticPoints = (beacons ?? [])
+        .filter((b) => b.type === 'semantic' && b.x != null && b.y != null)
+        .map((b) => ({ id: b.id, x: b.x as number, y: b.y as number }))
+      const plan = await planReinforcementBeacons(semanticPoints, mask, scale.scaleMPerPx)
+      const hasExisting = (beacons ?? []).some((b) => b.type === 'reinforcement')
+      if (plan.length === 0 && !hasExisting) {
+        setReinforceError('간격이 6m를 넘는 구간이 없어 보강비콘이 필요하지 않습니다.')
+        return
+      }
+      setReinforcePlan(plan)
+    } catch (err) {
+      setReinforceError(err instanceof Error ? err.message : '계산에 실패했습니다.')
+    } finally {
+      setPlanning(false)
+    }
+  }
+
+  async function confirmReinforce() {
+    if (!reinforcePlan) return
+    setApplyingReinforce(true)
+    try {
+      const existingReinforcement = (beacons ?? []).filter((b) => b.type === 'reinforcement')
+      for (const b of existingReinforcement) {
+        await del.mutateAsync(b.id)
+      }
+      let nextMinor =
+        (beacons ?? [])
+          .filter((b) => !existingReinforcement.includes(b))
+          .reduce((max, b) => Math.max(max, b.minor), 0) + 1
+      for (let i = 0; i < reinforcePlan.length; i++) {
+        const item = reinforcePlan[i]
+        await create.mutateAsync({
+          name: `보강비콘 ${i + 1}`,
+          minor: nextMinor++,
+          type: 'reinforcement',
+          x: item.x,
+          y: item.y,
+        })
+      }
+      setReinforcePlan(null)
+    } finally {
+      setApplyingReinforce(false)
+    }
   }
 
   async function onImportFile(e: ChangeEvent<HTMLInputElement>) {
@@ -130,7 +182,14 @@ export default function BeaconListPage() {
 
   const points: MapPoint[] = (beacons ?? [])
     .filter((b) => b.x != null && b.y != null)
-    .map((b) => ({ id: b.id, x: b.x as number, y: b.y as number, color: TYPE_COLOR[b.type], label: b.name }))
+    .map((b) => ({
+      id: b.id,
+      x: b.x as number,
+      y: b.y as number,
+      color: TYPE_COLOR[b.type],
+      label: b.name,
+      draggable: b.type === 'semantic', // 보강비콘은 자동계산된 위치라 드래그로 옮기지 않는다
+    }))
   if (pendingPos) {
     points.push({
       id: PENDING_ID,
@@ -191,7 +250,6 @@ export default function BeaconListPage() {
               </div>
               <Input label="minor" type="number" placeholder="10" value={minor} onChange={(e) => setMinor(e.target.value)} />
             </div>
-            <ColorSelect label="타입" value={type} onChange={setType} options={TYPE_OPTIONS} />
             <Button type="submit" disabled={!valid || create.isPending}>
               비콘 추가
             </Button>
@@ -205,7 +263,7 @@ export default function BeaconListPage() {
       <Card className="mt-6">
         <div className="flex items-center justify-between">
           <h3>등록된 비콘</h3>
-          <div>
+          <div className="flex gap-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -220,9 +278,23 @@ export default function BeaconListPage() {
             >
               지도 데이터 가져오기
             </Button>
+            <Button
+              variant="outline"
+              style={{ height: 34, padding: '0 12px' }}
+              disabled={!mask || !scale || planning}
+              onClick={onPlanReinforce}
+            >
+              {planning ? '계산 중…' : '보강비콘 자동생성'}
+            </Button>
           </div>
         </div>
+        {(!mask || !scale) && (
+          <p className="text-[13px] text-muted mt-2">
+            보강비콘 자동생성은 지도 검수(마스크)와 축척 설정을 먼저 완료해야 사용할 수 있습니다.
+          </p>
+        )}
         {importError && <p className="text-[13px] mt-2" style={{ color: '#DC4C4C' }}>{importError}</p>}
+        {reinforceError && <p className="text-[13px] mt-2" style={{ color: '#DC4C4C' }}>{reinforceError}</p>}
         {beaconsLoading && <AsyncState status="loading" />}
         {beaconsError && <AsyncState status="error" onRetry={() => refetchBeacons()} />}
         <div className="grid gap-2 mt-3">
@@ -286,6 +358,21 @@ export default function BeaconListPage() {
         pending={importing}
         onCancel={() => setImportPlan(null)}
         onConfirm={confirmImport}
+      />
+
+      <ConfirmDialog
+        open={!!reinforcePlan}
+        title="보강비콘을 자동생성할까요?"
+        description={
+          reinforcePlan
+            ? `기존 보강비콘 ${(beacons ?? []).filter((b) => b.type === 'reinforcement').length}개를 삭제하고, 새로 ${reinforcePlan.length}개를 생성합니다. 위치는 자동계산되며 이름·MAC은 이후 목록에서 편집할 수 있습니다.`
+            : undefined
+        }
+        confirmLabel="생성"
+        confirmVariant="primary"
+        pending={applyingReinforce}
+        onCancel={() => setReinforcePlan(null)}
+        onConfirm={confirmReinforce}
       />
     </div>
   )

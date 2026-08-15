@@ -11,6 +11,7 @@ export interface MapPoint {
   y: number
   color: string
   label: string
+  draggable?: boolean // 생략 시 true — 자동계산된 점(보강비콘 등) 위치 고정에 사용
 }
 
 // 설계도 배경 + 드래그 가능한 점들. 비콘·목적지 배치에 공용.
@@ -98,7 +99,7 @@ export function FloorMapCanvas({
                 fill={p.color}
                 stroke="#fff"
                 strokeWidth={2}
-                draggable={!!onMove}
+                draggable={!!onMove && p.draggable !== false}
                 onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) =>
                   onMove?.(
                     p.id,

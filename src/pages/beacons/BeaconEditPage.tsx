@@ -3,21 +3,14 @@ import type { FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useBeacons, useDeleteBeacon, useUpdateBeacon } from '@/features/beacons/hooks'
-import type { Beacon, BeaconType } from '@/types/domain'
+import type { Beacon } from '@/types/domain'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { AsyncState } from '@/components/ui/AsyncState'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { ColorSelect } from '@/components/ui/ColorSelect'
-import { BEACON_TYPE_COLOR, BEACON_TYPE_LABEL } from '@/lib/constants'
-
-const TYPE_OPTIONS = (Object.keys(BEACON_TYPE_LABEL) as BeaconType[]).map((value) => ({
-  value,
-  label: BEACON_TYPE_LABEL[value],
-  color: BEACON_TYPE_COLOR[value],
-}))
+import { BEACON_TYPE_LABEL } from '@/lib/constants'
 
 export default function BeaconEditPage() {
   const { buildingId = '', floorId = '', beaconId = '' } = useParams()
@@ -91,7 +84,6 @@ function BeaconEditForm({
     name: string
     mac: string | undefined
     minor: number
-    type: BeaconType
   }) => void
   onDelete: () => void
   onCancel: () => void
@@ -101,7 +93,6 @@ function BeaconEditForm({
   const [name, setName] = useState(beacon.name)
   const [mac, setMac] = useState(beacon.mac ?? '')
   const [minor, setMinor] = useState(String(beacon.minor))
-  const [type, setType] = useState<BeaconType>(beacon.type)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
   function handleSubmit(e: FormEvent) {
@@ -110,7 +101,6 @@ function BeaconEditForm({
       name: name.trim(),
       mac: mac.trim() || undefined,
       minor: Number(minor),
-      type,
     })
   }
 
@@ -128,7 +118,13 @@ function BeaconEditForm({
           </div>
           <Input label="minor" type="number" value={minor} onChange={(e) => setMinor(e.target.value)} />
         </div>
-        <ColorSelect label="타입" value={type} onChange={setType} options={TYPE_OPTIONS} />
+        <div>
+          <span className="block text-[13px] text-muted mb-2">타입</span>
+          <div className="h-12 px-4 rounded-lg border border-line bg-field text-sm flex items-center text-muted">
+            {BEACON_TYPE_LABEL[beacon.type]}
+            {beacon.type === 'reinforcement' && ' (자동생성 — 비콘 목록에서 다시 계산하세요)'}
+          </div>
+        </div>
         <div className="flex gap-3">
           <Button type="submit" disabled={submitting}>
             저장
