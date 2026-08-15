@@ -10,6 +10,7 @@ import { useConnectors } from '@/features/connectors/hooks'
 import { useLandmarks } from '@/features/landmarks/hooks'
 import { generatePathNodes } from '@/features/mapEditor/pathNodes'
 import type { EntrancePoint, PathEdge, PathNode } from '@/features/mapEditor/pathNodes'
+import { findShortestPath } from '@/features/mapEditor/pathfind'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
@@ -31,6 +32,7 @@ function nodeColor(node: PathNode): string {
 }
 
 const DEFAULT_CROSSING_MAX_M = 12 // 축척 미설정 시 기본 횡단 가능 거리(대략 240px 상당)
+const DEFAULT_CROSS_PENALTY_M = 5 // 건너기 페널티 기본값 — 이만큼 이상 절약될 때만 건넘
 
 function storageKey(floorId: string) {
   return `pathNodes:${floorId}`
@@ -122,6 +124,11 @@ export default function PathNodePage() {
   })
   const [generating, setGenerating] = useState(false)
 
+  const [testMode, setTestMode] = useState(false)
+  const [testStart, setTestStart] = useState<string | null>(null)
+  const [testEnd, setTestEnd] = useState<string | null>(null)
+  const [crossPenaltyM, setCrossPenaltyM] = useState(String(DEFAULT_CROSS_PENALTY_M))
+
   const stageRef = useRef<Konva.Stage>(null)
   const [zoom, setZoom] = useState(1)
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
@@ -207,6 +214,43 @@ export default function PathNodePage() {
   const scale = maskDims ? width / maskDims.w : 0
   const H = displayImg ? Math.round((displayImg.height / displayImg.width) * width) : 0
 
+  // PathNode 좌표는 저장된 마스크와 같은 픽셀 공간이라 축척을 별도 비율 보정 없이 바로 쓸 수 있다.
+  const penaltyM = Number(crossPenaltyM)
+  const crossPenaltyPx =
+    savedScale && Number.isFinite(penaltyM) && penaltyM >= 0 ? penaltyM / savedScale.scaleMPerPx : 0
+
+  const testResult = useMemo(() => {
+    if (!testStart || !testEnd) return null
+    return findShortestPath(nodes, edges, testStart, testEnd, crossPenaltyPx)
+  }, [nodes, edges, testStart, testEnd, crossPenaltyPx])
+  const testDistanceM = testResult && savedScale ? testResult.distancePx * savedScale.scaleMPerPx : null
+
+  function onNodeClickForTest(nodeId: string) {
+    if (!testMode) return
+    if (!testStart || (testStart && testEnd)) {
+      setTestStart(nodeId)
+      setTestEnd(null)
+      return
+    }
+    setTestEnd(nodeId)
+  }
+
+  function toggleTestMode() {
+    setTestMode((v) => {
+      const next = !v
+      if (!next) {
+        setTestStart(null)
+        setTestEnd(null)
+      }
+      return next
+    })
+  }
+
+  function clearTest() {
+    setTestStart(null)
+    setTestEnd(null)
+  }
+
   const crumbs = [
     { label: '홈', to: '/' },
     { label: '건물 관리', to: '/buildings' },
@@ -288,28 +332,51 @@ export default function PathNodePage() {
                     )
                   })}
                 </Layer>
+                {testResult && (
+                  <Layer listening={false}>
+                    {testResult.path.slice(0, -1).map((id, i) => {
+                      const a = byId.get(id)
+                      const b = byId.get(testResult.path[i + 1])
+                      if (!a || !b) return null
+                      return (
+                        <Line
+                          key={`test-${id}-${testResult.path[i + 1]}`}
+                          points={[a.x * scale, a.y * scale, b.x * scale, b.y * scale]}
+                          stroke="#dc2626"
+                          strokeWidth={3.5}
+                          lineCap="round"
+                        />
+                      )
+                    })}
+                  </Layer>
+                )}
                 <Layer>
-                  {nodes.map((node) => (
-                    <Circle
-                      key={node.id}
-                      x={node.x * scale}
-                      y={node.y * scale}
-                      radius={7}
-                      fill={node.type === 'facing' ? undefined : nodeColor(node)}
-                      stroke={node.type === 'facing' ? nodeColor(node) : '#fff'}
-                      strokeWidth={node.type === 'facing' ? 1.6 : 1.4}
-                      draggable
-                      onDragStart={(e: Konva.KonvaEventObject<DragEvent>) => {
-                        e.cancelBubble = true
-                        setNodeDragging(true)
-                      }}
-                      onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) => {
-                        e.cancelBubble = true
-                        onNodeMove(node.id, Math.round(e.target.x() / scale), Math.round(e.target.y() / scale))
-                        setNodeDragging(false)
-                      }}
-                    />
-                  ))}
+                  {nodes.map((node) => {
+                    const isStart = testMode && node.id === testStart
+                    const isEnd = testMode && node.id === testEnd
+                    return (
+                      <Circle
+                        key={node.id}
+                        x={node.x * scale}
+                        y={node.y * scale}
+                        radius={isStart || isEnd ? 9 : 7}
+                        fill={isStart ? '#16a34a' : isEnd ? '#dc2626' : node.type === 'facing' ? undefined : nodeColor(node)}
+                        stroke={isStart || isEnd ? '#fff' : node.type === 'facing' ? nodeColor(node) : '#fff'}
+                        strokeWidth={isStart || isEnd ? 2 : node.type === 'facing' ? 1.6 : 1.4}
+                        draggable={!testMode}
+                        onClick={() => onNodeClickForTest(node.id)}
+                        onDragStart={(e: Konva.KonvaEventObject<DragEvent>) => {
+                          e.cancelBubble = true
+                          setNodeDragging(true)
+                        }}
+                        onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) => {
+                          e.cancelBubble = true
+                          onNodeMove(node.id, Math.round(e.target.x() / scale), Math.round(e.target.y() / scale))
+                          setNodeDragging(false)
+                        }}
+                      />
+                    )
+                  })}
                 </Layer>
               </Stage>
             )}
@@ -373,6 +440,55 @@ export default function PathNodePage() {
                 +
               </Button>
             </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-line">
+            <span className="block text-[13px] text-muted mb-2">경로 찾기 (테스트)</span>
+            <Button
+              variant={testMode ? 'primary' : 'outline'}
+              className="w-full"
+              disabled={nodes.length === 0}
+              onClick={toggleTestMode}
+            >
+              {testMode ? '테스트 모드 끄기' : '시작·도착 노드 클릭'}
+            </Button>
+            {testMode && (
+              <p className="text-[12px] text-muted mt-2">
+                {!testStart
+                  ? '시작 노드를 클릭하세요.'
+                  : !testEnd
+                    ? '도착 노드를 클릭하세요.'
+                    : '다시 클릭하면 시작 노드부터 새로 고를 수 있어요.'}
+              </p>
+            )}
+
+            <div className="mt-3">
+              <span className="block text-[13px] text-muted mb-2">건너기 페널티(이만큼 절약될 때만 건넘)</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] text-muted">+</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={crossPenaltyM}
+                  onChange={(e) => setCrossPenaltyM(e.target.value)}
+                  className="w-16 h-9 px-2 rounded-lg border border-line bg-field text-sm outline-none text-right"
+                />
+                <span className="text-[12px] text-muted">m</span>
+              </div>
+            </div>
+
+            <Button variant="outline" className="w-full mt-3" disabled={!testStart && !testEnd} onClick={clearTest}>
+              테스트 지우기
+            </Button>
+
+            {testStart && testEnd && (
+              <p className="text-[13px] mt-3">
+                {testResult
+                  ? `거리: ${testDistanceM != null ? `약 ${testDistanceM.toFixed(1)}m` : `${Math.round(testResult.distancePx)}px`}`
+                  : '두 노드 사이에 경로가 없습니다.'}
+              </p>
+            )}
           </div>
         </Card>
       </div>
