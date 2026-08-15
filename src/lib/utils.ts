@@ -12,3 +12,8 @@ export function cx(...classes: Array<string | false | null | undefined>): string
 export function snapToGrid(value: number, grid = 5): number {
   return Math.round(value / grid) * grid || 0 // -0 대신 0을 반환
 }
+
+/** 마침표+공백 기준으로 문장을 나눈다 — 안내 문구를 단어 중간이 아니라 문장 단위로 줄바꿈할 때 씀 */
+export function splitSentences(text: string): string[] {
+  return text.split(/(?<=\.)\s+/)
+}

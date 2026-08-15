@@ -9,6 +9,7 @@ import { closeGaps, openNoise } from '@/lib/maskMorphology'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { SentenceText } from '@/components/ui/SentenceText'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 
@@ -391,12 +392,12 @@ export default function MapReviewPage() {
     return () => ro.disconnect()
   }, [])
 
-  // Ctrl/Cmd + 휠로 확대·축소 — React 합성 wheel 이벤트는 기본적으로 passive라 preventDefault가 안 먹어서 네이티브로 붙인다.
+  // 휠로 확대·축소(다른 지도 화면들과 동일하게 Ctrl 없이 바로 동작) — React 합성 wheel 이벤트는
+  // 기본적으로 passive라 preventDefault가 안 먹어서 네이티브로 붙인다.
   useEffect(() => {
     const el = stageRef.current
     if (!el) return
     function handleWheel(e: WheelEvent) {
-      if (!(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
       setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))))
     }
@@ -680,7 +681,7 @@ export default function MapReviewPage() {
           </div>
           <p className="mt-2 text-[13px] text-muted">
             영역을 <strong>클릭</strong>하면 통행 영역이 채워집니다. 출입구처럼 벽이 뚫려 밖으로 샐 때는{' '}
-            <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요. Ctrl(⌘)+휠로 확대할 수 있어요.
+            <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요. 마우스 휠로 확대할 수 있어요.
           </p>
         </div>
 
@@ -810,9 +811,7 @@ export default function MapReviewPage() {
 
       <Modal open={confirmSaveOpen} onClose={() => setConfirmSaveOpen(false)}>
         <h2 style={{ marginTop: 0 }}>검수를 완료하시겠습니까?</h2>
-        <p style={{ color: '#8C99B3' }}>
-          현재까지 채운 통행 영역이 저장되며, 이후 경로탐색에 이 영역이 사용됩니다.
-        </p>
+        <SentenceText text="현재까지 채운 통행 영역이 저장되며, 이후 경로탐색에 이 영역이 사용됩니다." style={{ color: '#8C99B3' }} />
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 }}>
           <Button variant="outline" onClick={() => setConfirmSaveOpen(false)}>
             취소
