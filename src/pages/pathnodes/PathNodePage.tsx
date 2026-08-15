@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const DESIGN_W = 900 // 비콘/랜드마크 좌표 기준 폭 — FloorMapCanvas.DESIGN_W와 동일
 
@@ -144,6 +145,7 @@ export default function PathNodePage() {
   // 층이 바뀌면 확대/이동 상태를 초기화하고, 그 층에 저장된 경로노드가 있으면 복원한다.
   // (렌더 중 상태 조정 — effect 안에서 동기 setState를 피함. https://react.dev/learn/you-might-not-need-an-effect)
   const [viewFloorId, setViewFloorId] = useState(floorId)
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
   if (floorId !== viewFloorId) {
     setViewFloorId(floorId)
     resetView()
@@ -351,7 +353,20 @@ export default function PathNodePage() {
         saveAction={{
           label: '저장',
           disabled: nodes.length === 0,
-          onClick: () => navigate(`/buildings/${buildingId}`),
+          onClick: () => setConfirmSaveOpen(true),
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmSaveOpen}
+        title="저장하고 완료할까요?"
+        description="지금까지 배치한 경로노드로 이 층의 세팅이 마무리됩니다. 이후에도 이 화면에서 다시 수정할 수 있습니다."
+        confirmLabel="저장"
+        confirmVariant="primary"
+        onCancel={() => setConfirmSaveOpen(false)}
+        onConfirm={() => {
+          setConfirmSaveOpen(false)
+          navigate(`/buildings/${buildingId}`)
         }}
       />
     </div>
