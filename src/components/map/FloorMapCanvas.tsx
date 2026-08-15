@@ -1,9 +1,13 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
-import { Stage, Layer, Image as KonvaImage, Circle, Text } from 'react-konva'
+import { Stage, Layer, Image as KonvaImage, Circle, Line, Text } from 'react-konva'
 import { useFloorplan } from '@/features/floorplan/hooks'
+import { useMask } from '@/features/mapEditor/hooks'
 import { MAP_DESIGN_W as DESIGN_W } from '@/lib/constants'
 import { snapToGrid } from '@/lib/utils'
+import { rasterizeMask } from '@/lib/maskRaster'
+import type { RasterizedMask } from '@/lib/maskRaster'
+import { findCorridorSnap } from '@/lib/corridorSnap'
 
 export interface MapPoint {
   id: string
@@ -25,20 +29,25 @@ export function FloorMapCanvas({
   points,
   onMove,
   onCanvasClick,
+  snapToCorridorCenter,
 }: {
   floorId: string
   points: MapPoint[]
   onMove?: (id: string, x: number, y: number) => void
   onCanvasClick?: (x: number, y: number) => void
+  snapToCorridorCenter?: boolean // 드래그 중 마스크 기준 복도 중심으로 자동 스냅(비콘 배치용)
 }) {
   const { data: floorplan } = useFloorplan(floorId)
+  const { data: mask } = useMask(snapToCorridorCenter ? floorId : '')
   const [loadedImg, setLoadedImg] = useState<{ url: string; image: HTMLImageElement } | null>(null)
+  const [rasterized, setRasterized] = useState<RasterizedMask | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<Konva.Stage>(null)
   const [width, setWidth] = useState(700)
   const [zoom, setZoom] = useState(1)
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
   const [pointDragging, setPointDragging] = useState(false)
+  const [snapGuide, setSnapGuide] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
 
   useLayoutEffect(() => {
     const el = containerRef.current
@@ -61,10 +70,22 @@ export function FloorMapCanvas({
     image.src = url
   }, [floorplan?.imageUrl])
 
+  useEffect(() => {
+    let cancelled = false
+    const next = mask ? rasterizeMask(mask) : Promise.resolve(null)
+    next.then((r) => {
+      if (!cancelled) setRasterized(r)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [mask])
+
   // 로드 완료된 이미지의 URL이 현재 floorplan URL과 다르면(층 전환 등) 이전 이미지를 그리지 않는다.
   const displayImg = loadedImg && loadedImg.url === floorplan?.imageUrl ? loadedImg.image : null
 
   const scale = width / DESIGN_W
+  const maskRatio = rasterized ? rasterized.w / DESIGN_W : 1 // 마스크 픽셀 폭 / 설계도(900) 폭
   const H = displayImg ? Math.round((displayImg.height / displayImg.width) * width) : Math.round(560 * scale)
 
   function zoomBy(factor: number) {
@@ -140,6 +161,26 @@ export function FloorMapCanvas({
                 stroke="#fff"
                 strokeWidth={2}
                 draggable={!!onMove && p.draggable !== false}
+                dragBoundFunc={
+                  snapToCorridorCenter && rasterized
+                    ? function (pos: { x: number; y: number }) {
+                        const maskX = (pos.x / scale) * maskRatio
+                        const maskY = (pos.y / scale) * maskRatio
+                        const snap = findCorridorSnap(rasterized.w, rasterized.h, rasterized.walkable, maskX, maskY)
+                        if (!snap) {
+                          setSnapGuide(null)
+                          return pos
+                        }
+                        setSnapGuide({
+                          x1: (snap.guide.x1 / maskRatio) * scale,
+                          y1: (snap.guide.y1 / maskRatio) * scale,
+                          x2: (snap.guide.x2 / maskRatio) * scale,
+                          y2: (snap.guide.y2 / maskRatio) * scale,
+                        })
+                        return { x: (snap.x / maskRatio) * scale, y: (snap.y / maskRatio) * scale }
+                      }
+                    : undefined
+                }
                 onDragStart={(e) => {
                   e.cancelBubble = true
                   setPointDragging(true)
@@ -147,6 +188,7 @@ export function FloorMapCanvas({
                 onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) => {
                   e.cancelBubble = true
                   setPointDragging(false)
+                  setSnapGuide(null)
                   onMove?.(
                     p.id,
                     snapToGrid(Math.round(e.target.x() / scale)),
@@ -164,6 +206,36 @@ export function FloorMapCanvas({
               />
             </Fragment>
           ))}
+          {snapGuide && (
+            <Fragment>
+              <Line
+                points={[snapGuide.x1, snapGuide.y1, snapGuide.x2, snapGuide.y2]}
+                stroke="#EC4899"
+                strokeWidth={2}
+                dash={[6, 6]}
+                listening={false}
+              />
+              {[
+                { x: snapGuide.x1, y: snapGuide.y1 },
+                { x: snapGuide.x2, y: snapGuide.y2 },
+              ].map((end, i) => {
+                const dx = snapGuide.x2 - snapGuide.x1
+                const dy = snapGuide.y2 - snapGuide.y1
+                const len = Math.hypot(dx, dy) || 1
+                const px = (-dy / len) * 6
+                const py = (dx / len) * 6
+                return (
+                  <Line
+                    key={i}
+                    points={[end.x - px, end.y - py, end.x + px, end.y + py]}
+                    stroke="#60A5FA"
+                    strokeWidth={2}
+                    listening={false}
+                  />
+                )
+              })}
+            </Fragment>
+          )}
         </Layer>
       </Stage>
 

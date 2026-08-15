@@ -225,11 +225,12 @@ export default function BeaconListPage() {
               else update.mutate({ beaconId: id, input: { x, y } })
             }}
             onCanvasClick={(x, y) => setPendingPos({ x, y })}
+            snapToCorridorCenter
           />
           <div className="flex flex-wrap gap-4 mt-2 text-[13px] text-muted">
             <span style={{ color: TYPE_COLOR.semantic }}>● 의미비콘</span>
             <span style={{ color: TYPE_COLOR.reinforcement }}>● 보강비콘</span>
-            <span>· 지도를 클릭해 새 비콘 위치 지정 · 점을 드래그해 위치 조정</span>
+            <span>· 지도를 클릭해 새 비콘 위치 지정 · 드래그하면 복도 중심에 자동으로 붙습니다</span>
           </div>
         </div>
 
