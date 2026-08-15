@@ -485,11 +485,23 @@ export default function PathNodePage() {
           </Button>
 
           <div className="grid grid-cols-2 gap-2 mt-2">
-            <Button variant="outline" onClick={undo} title="실행 취소 (Ctrl+Z)">
-              ← 되돌리기
+            <Button
+              variant="outline"
+              className="whitespace-nowrap"
+              style={{ padding: '0 4px', fontSize: 13 }}
+              onClick={undo}
+              title="실행 취소 (Ctrl+Z)"
+            >
+              되돌리기
             </Button>
-            <Button variant="outline" onClick={redo} title="다시 실행 (Ctrl+Shift+Z)">
-              다시 실행 →
+            <Button
+              variant="outline"
+              className="whitespace-nowrap"
+              style={{ padding: '0 4px', fontSize: 13 }}
+              onClick={redo}
+              title="다시 실행 (Ctrl+Shift+Z)"
+            >
+              다시실행
             </Button>
           </div>
 

@@ -19,7 +19,7 @@ const BARRIER_R = 4 // 벽 펜 반경(px)
 const ZOOM_MIN = 1 // 기본 화면(맞춤 배율) 밑으로는 축소 못 하게
 const ZOOM_MAX = 8
 
-type Tool = 'fill' | 'drawArea' | 'wall' | 'erase' | 'scale'
+type Tool = 'fill' | 'drawArea' | 'wall' | 'erase' | 'scale' | 'pan'
 
 export default function MapReviewPage() {
   const { buildingId = '', floorId = '' } = useParams()
@@ -47,6 +47,9 @@ export default function MapReviewPage() {
   const scaleHoverRef = useRef<{ x: number; y: number } | null>(null) // 두 번째 점 스냅 미리보기
   const areaStartRef = useRef<{ x: number; y: number } | null>(null) // 사각형 채우기/지우개 드래그 시작점
   const areaCurrentRef = useRef<{ x: number; y: number } | null>(null)
+  const panDragRef = useRef<{ startClientX: number; startClientY: number; startPanX: number; startPanY: number } | null>(
+    null,
+  )
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
   const [tool, setTool] = useState<Tool>('fill')
@@ -56,7 +59,7 @@ export default function MapReviewPage() {
   const [distanceError, setDistanceError] = useState<string | null>(null)
   const [containerWidth, setContainerWidth] = useState(700)
   const [zoom, setZoom] = useState(1)
-  const [zoomOrigin, setZoomOrigin] = useState('50% 50%') // 휠 확대 시 커서 위치를 기준점으로
+  const [pan, setPan] = useState({ x: 0, y: 0 }) // 화면(CSS) px 단위 이동량
   const [gapFillM, setGapFillM] = useState('0.3')
   const [noiseRemoveM, setNoiseRemoveM] = useState('0.3')
 
@@ -178,6 +181,7 @@ export default function MapReviewPage() {
     scaleHoverRef.current = null
     areaStartRef.current = null
     areaCurrentRef.current = null
+    panDragRef.current = null
     setTool(mode)
     redraw()
   }
@@ -392,6 +396,15 @@ export default function MapReviewPage() {
     return () => ro.disconnect()
   }, [])
 
+  // 커서(또는 화면 중앙) 아래 지점이 확대 후에도 같은 자리에 남도록 pan을 같이 조정한다 —
+  // Konva 화면들(FloorMapCanvas/PathNodePage)의 stage scale+position 확대와 동일한 계산.
+  function zoomAt(pointer: { x: number; y: number }, nextZoom: number) {
+    const clamped = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, nextZoom))
+    const pointTo = { x: (pointer.x - pan.x) / zoom, y: (pointer.y - pan.y) / zoom }
+    setZoom(clamped)
+    setPan({ x: pointer.x - pointTo.x * clamped, y: pointer.y - pointTo.y * clamped })
+  }
+
   // 휠로 확대·축소(다른 지도 화면들과 동일하게 Ctrl 없이 바로 동작, 컨테이너는 고정한 채 설계도만 확대) —
   // React 합성 wheel 이벤트는 기본적으로 passive라 preventDefault가 안 먹어서 네이티브로 붙인다.
   useEffect(() => {
@@ -400,22 +413,23 @@ export default function MapReviewPage() {
     function handleWheel(e: WheelEvent) {
       e.preventDefault()
       const rect = el!.getBoundingClientRect()
-      const px = ((e.clientX - rect.left) / rect.width) * 100
-      const py = ((e.clientY - rect.top) / rect.height) * 100
-      setZoomOrigin(`${px}% ${py}%`)
-      setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))))
+      const pointer = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      zoomAt(pointer, zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15))
     }
     el.addEventListener('wheel', handleWheel, { passive: false })
     return () => el.removeEventListener('wheel', handleWheel)
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom, pan])
 
   function zoomBy(factor: number) {
-    setZoomOrigin('50% 50%')
-    setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * factor)))
+    const el = stageRef.current
+    const rect = el?.getBoundingClientRect()
+    const pointer = rect ? { x: rect.width / 2, y: rect.height / 2 } : { x: 0, y: 0 }
+    zoomAt(pointer, zoom * factor)
   }
   function resetZoom() {
-    setZoomOrigin('50% 50%')
     setZoom(1)
+    setPan({ x: 0, y: 0 })
   }
 
   function getXY(e: ReactMouseEvent<HTMLCanvasElement>) {
@@ -442,9 +456,18 @@ export default function MapReviewPage() {
       areaStartRef.current = { x, y }
       areaCurrentRef.current = { x, y }
       redraw()
+      return
+    }
+    if (tool === 'pan') {
+      panDragRef.current = { startClientX: e.clientX, startClientY: e.clientY, startPanX: pan.x, startPanY: pan.y }
     }
   }
   function onMouseMove(e: ReactMouseEvent<HTMLCanvasElement>) {
+    if (tool === 'pan' && panDragRef.current) {
+      const { startClientX, startClientY, startPanX, startPanY } = panDragRef.current
+      setPan({ x: startPanX + (e.clientX - startClientX), y: startPanY + (e.clientY - startClientY) })
+      return
+    }
     if (tool === 'wall' && drawingRef.current) {
       const { x, y } = getXY(e)
       const from = lastRef.current ?? { x, y }
@@ -464,6 +487,10 @@ export default function MapReviewPage() {
     }
   }
   function onMouseUp() {
+    if (tool === 'pan') {
+      panDragRef.current = null
+      return
+    }
     if (drawingRef.current) {
       drawingRef.current = false
       lastRef.current = null
@@ -487,7 +514,7 @@ export default function MapReviewPage() {
     }
   }
   function onCanvasClick(e: ReactMouseEvent<HTMLCanvasElement>) {
-    if (tool === 'wall' || tool === 'drawArea' || tool === 'erase') return // 드래그로 처리
+    if (tool === 'wall' || tool === 'drawArea' || tool === 'erase' || tool === 'pan') return // 드래그로 처리
     const { x, y } = getXY(e)
     if (tool === 'scale') {
       const pts = scalePointsRef.current
@@ -646,7 +673,10 @@ export default function MapReviewPage() {
           <div
             ref={stageRef}
             className="relative w-full border border-line rounded-lg bg-white overflow-hidden"
-            style={{ cursor: 'crosshair', height: dims ? dims.h * fitScale : undefined }}
+            style={{
+              cursor: tool === 'pan' ? 'grab' : 'crosshair',
+              height: dims ? dims.h * fitScale : undefined,
+            }}
           >
             {dims && (
               <canvas
@@ -660,11 +690,10 @@ export default function MapReviewPage() {
                 onMouseLeave={onMouseUp}
                 style={{
                   display: 'block',
-                  margin: '0 auto',
                   width: dims.w * fitScale,
                   height: dims.h * fitScale,
-                  transform: `scale(${zoom})`,
-                  transformOrigin: zoomOrigin,
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transformOrigin: '0 0',
                 }}
               />
             )}
@@ -706,14 +735,27 @@ export default function MapReviewPage() {
             {toolBtn('wall', '벽 그리기 (틈 막기)')}
             {toolBtn('erase', '영역 지우기 (사각형)')}
             {toolBtn('scale', '축척 설정')}
+            {toolBtn('pan', '화면 이동')}
           </div>
 
           <div className="undo-row grid grid-cols-2 gap-2 mt-2">
-            <Button variant="outline" onClick={undo} title="실행 취소 (Ctrl+Z)">
-              ← 되돌리기
+            <Button
+              variant="outline"
+              className="whitespace-nowrap"
+              style={{ padding: '0 4px', fontSize: 13 }}
+              onClick={undo}
+              title="실행 취소 (Ctrl+Z)"
+            >
+              되돌리기
             </Button>
-            <Button variant="outline" onClick={redo} title="다시 실행 (Ctrl+Shift+Z)">
-              다시 실행 →
+            <Button
+              variant="outline"
+              className="whitespace-nowrap"
+              style={{ padding: '0 4px', fontSize: 13 }}
+              onClick={redo}
+              title="다시 실행 (Ctrl+Shift+Z)"
+            >
+              다시실행
             </Button>
           </div>
 
