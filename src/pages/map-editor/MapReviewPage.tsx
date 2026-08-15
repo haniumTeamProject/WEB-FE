@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
 import { useMask, useSaveMask, useScale, useSaveScale } from '@/features/mapEditor/hooks'
+import { closeGaps, openNoise } from '@/lib/maskMorphology'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -14,8 +15,10 @@ import { StepFooter } from '@/components/layout/StepNav'
 const CANVAS_W = 760
 const FILL: [number, number, number, number] = [75, 112, 229, 120] // 이동영역(반투명 파랑)
 const BARRIER_R = 4 // 벽 펜 반경(px)
+const ZOOM_MIN = 0.2
+const ZOOM_MAX = 8
 
-type Tool = 'fill' | 'erase' | 'wall' | 'scale'
+type Tool = 'fill' | 'drawArea' | 'wall' | 'erase' | 'scale'
 
 export default function MapReviewPage() {
   const { buildingId = '', floorId = '' } = useParams()
@@ -29,15 +32,19 @@ export default function MapReviewPage() {
   const saveScale = useSaveScale(floorId)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const baseDataRef = useRef<ImageData | null>(null)
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const walkableRef = useRef<Uint8Array | null>(null)
   const barrierRef = useRef<Uint8Array | null>(null) // 사용자가 그린 벽
   const historyRef = useRef<{ w: Uint8Array; b: Uint8Array }[]>([])
+  const redoRef = useRef<{ w: Uint8Array; b: Uint8Array }[]>([])
   const drawingRef = useRef(false)
   const lastRef = useRef<{ x: number; y: number } | null>(null)
   const scalePointsRef = useRef<{ x: number; y: number }[]>([]) // 축척 측정용 두 점(계산 후 저장하지 않음)
+  const areaStartRef = useRef<{ x: number; y: number } | null>(null) // 사각형 채우기/지우개 드래그 시작점
+  const areaCurrentRef = useRef<{ x: number; y: number } | null>(null)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
   const [tool, setTool] = useState<Tool>('fill')
@@ -45,6 +52,13 @@ export default function MapReviewPage() {
   const [scaleModalOpen, setScaleModalOpen] = useState(false)
   const [distanceInput, setDistanceInput] = useState('')
   const [distanceError, setDistanceError] = useState<string | null>(null)
+  const [containerWidth, setContainerWidth] = useState(700)
+  const [zoom, setZoom] = useState(1)
+  const [gapFillM, setGapFillM] = useState('0.3')
+  const [noiseRemoveM, setNoiseRemoveM] = useState('0.3')
+
+  const fitScale = dims ? containerWidth / dims.w : 1
+  const dispScale = fitScale * zoom
 
   function rebuildMask() {
     const mask = maskCanvasRef.current
@@ -81,6 +95,7 @@ export default function MapReviewPage() {
     ctx.drawImage(base, 0, 0)
     if (mask) ctx.drawImage(mask, 0, 0)
     drawScaleOverlay(ctx)
+    drawAreaOverlay(ctx)
   }
 
   // 측정 중인 축척 두 점 + 연결선을 마스크 위에 그림(저장 대상 아님, 화면 표시용)
@@ -105,9 +120,36 @@ export default function MapReviewPage() {
     ctx.restore()
   }
 
-  // 도구 전환 시 진행 중이던 축척 측정 점은 버림
+  // 사각형 채우기/지우개 드래그 중인 영역 미리보기
+  function drawAreaOverlay(ctx: CanvasRenderingContext2D) {
+    if (tool !== 'drawArea' && tool !== 'erase') return
+    const s = areaStartRef.current
+    const c = areaCurrentRef.current
+    if (!s || !c) return
+    const x0 = Math.min(s.x, c.x)
+    const y0 = Math.min(s.y, c.y)
+    const w = Math.abs(c.x - s.x)
+    const h = Math.abs(c.y - s.y)
+    ctx.save()
+    if (tool === 'drawArea') {
+      ctx.strokeStyle = 'rgba(75,112,229,0.9)'
+      ctx.fillStyle = 'rgba(75,112,229,0.15)'
+    } else {
+      ctx.strokeStyle = 'rgba(55,65,81,0.85)'
+      ctx.fillStyle = 'rgba(55,65,81,0.12)'
+    }
+    ctx.lineWidth = 1.5
+    ctx.setLineDash([5, 4])
+    ctx.fillRect(x0, y0, w, h)
+    ctx.strokeRect(x0, y0, w, h)
+    ctx.restore()
+  }
+
+  // 도구 전환 시 진행 중이던 측정/드래그 상태는 버림
   function selectTool(mode: Tool) {
     scalePointsRef.current = []
+    areaStartRef.current = null
+    areaCurrentRef.current = null
     setTool(mode)
     redraw()
   }
@@ -118,6 +160,7 @@ export default function MapReviewPage() {
     if (!wk || !br) return
     historyRef.current.push({ w: wk.slice(), b: br.slice() })
     if (historyRef.current.length > 20) historyRef.current.shift()
+    redoRef.current = [] // 새 작업이 생기면 다시 실행 스택은 무효화
   }
 
   function isWall(idx: number): boolean {
@@ -189,6 +232,27 @@ export default function MapReviewPage() {
     }
   }
 
+  // 사각형 영역을 통행영역으로 채우거나(add) 완전히 지운다(마스크+벽 둘 다 제거)
+  function applyRectArea(x0: number, y0: number, x1: number, y1: number, add: boolean) {
+    const base = baseCanvasRef.current
+    const wk = walkableRef.current
+    const br = barrierRef.current
+    if (!base || !wk || !br) return
+    const w = base.width
+    const h = base.height
+    const xlo = Math.max(0, Math.min(Math.round(x0), Math.round(x1)))
+    const xhi = Math.min(w - 1, Math.max(Math.round(x0), Math.round(x1)))
+    const ylo = Math.max(0, Math.min(Math.round(y0), Math.round(y1)))
+    const yhi = Math.min(h - 1, Math.max(Math.round(y0), Math.round(y1)))
+    for (let y = ylo; y <= yhi; y++) {
+      for (let x = xlo; x <= xhi; x++) {
+        const idx = y * w + x
+        wk[idx] = add ? 1 : 0
+        if (!add) br[idx] = 0
+      }
+    }
+  }
+
   // 설계도 로드 + 초기화(+ 저장된 마스크 복원)
   useEffect(() => {
     if (!floorplan?.imageUrl) return
@@ -210,6 +274,7 @@ export default function MapReviewPage() {
       walkableRef.current = new Uint8Array(w * h)
       barrierRef.current = new Uint8Array(w * h)
       historyRef.current = []
+      redoRef.current = []
       setDims({ w, h })
 
       const finish = () => {
@@ -243,6 +308,82 @@ export default function MapReviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dims])
 
+  function undo() {
+    const wk = walkableRef.current
+    const br = barrierRef.current
+    const prev = historyRef.current.pop()
+    if (!prev || !wk || !br) return
+    redoRef.current.push({ w: wk.slice(), b: br.slice() })
+    walkableRef.current = prev.w
+    barrierRef.current = prev.b
+    rebuildMask()
+    redraw()
+  }
+  function redo() {
+    const wk = walkableRef.current
+    const br = barrierRef.current
+    const next = redoRef.current.pop()
+    if (!next || !wk || !br) return
+    historyRef.current.push({ w: wk.slice(), b: br.slice() })
+    walkableRef.current = next.w
+    barrierRef.current = next.b
+    rebuildMask()
+    redraw()
+  }
+
+  // 되돌리기/다시 실행 키보드 단축키(Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z 또는 Ctrl+Y) — 모달이 열려있을 땐 끔
+  useEffect(() => {
+    function handleKeydown(e: KeyboardEvent) {
+      if (scaleModalOpen || confirmSaveOpen) return
+      const key = e.key.toLowerCase()
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && key === 'z') {
+        e.preventDefault()
+        undo()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && ((e.shiftKey && key === 'z') || key === 'y')) {
+        e.preventDefault()
+        redo()
+      }
+    }
+    document.addEventListener('keydown', handleKeydown)
+    return () => document.removeEventListener('keydown', handleKeydown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scaleModalOpen, confirmSaveOpen])
+
+  // 컨테이너 폭 측정(확대 배율 계산용)
+  useLayoutEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    setContainerWidth(Math.round(el.getBoundingClientRect().width))
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width
+      if (w) setContainerWidth(Math.round(w))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Ctrl/Cmd + 휠로 확대·축소 — React 합성 wheel 이벤트는 기본적으로 passive라 preventDefault가 안 먹어서 네이티브로 붙인다.
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    function handleWheel(e: WheelEvent) {
+      if (!(e.ctrlKey || e.metaKey)) return
+      e.preventDefault()
+      setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))))
+    }
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [])
+
+  function zoomBy(factor: number) {
+    setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * factor)))
+  }
+  function resetZoom() {
+    setZoom(1)
+  }
+
   function getXY(e: ReactMouseEvent<HTMLCanvasElement>) {
     const cv = canvasRef.current!
     const rect = cv.getBoundingClientRect()
@@ -253,21 +394,35 @@ export default function MapReviewPage() {
   }
 
   function onMouseDown(e: ReactMouseEvent<HTMLCanvasElement>) {
-    if (tool !== 'wall') return
-    drawingRef.current = true
-    pushHistory()
-    const { x, y } = getXY(e)
-    lastRef.current = { x, y }
-    stampDisc(x, y)
-    redraw()
+    if (tool === 'wall') {
+      drawingRef.current = true
+      pushHistory()
+      const { x, y } = getXY(e)
+      lastRef.current = { x, y }
+      stampDisc(x, y)
+      redraw()
+      return
+    }
+    if (tool === 'drawArea' || tool === 'erase') {
+      const { x, y } = getXY(e)
+      areaStartRef.current = { x, y }
+      areaCurrentRef.current = { x, y }
+      redraw()
+    }
   }
   function onMouseMove(e: ReactMouseEvent<HTMLCanvasElement>) {
-    if (tool !== 'wall' || !drawingRef.current) return
-    const { x, y } = getXY(e)
-    const from = lastRef.current ?? { x, y }
-    stampLine(from.x, from.y, x, y)
-    lastRef.current = { x, y }
-    redraw()
+    if (tool === 'wall' && drawingRef.current) {
+      const { x, y } = getXY(e)
+      const from = lastRef.current ?? { x, y }
+      stampLine(from.x, from.y, x, y)
+      lastRef.current = { x, y }
+      redraw()
+      return
+    }
+    if ((tool === 'drawArea' || tool === 'erase') && areaStartRef.current) {
+      areaCurrentRef.current = getXY(e)
+      redraw()
+    }
   }
   function onMouseUp() {
     if (drawingRef.current) {
@@ -275,10 +430,25 @@ export default function MapReviewPage() {
       lastRef.current = null
       rebuildMask()
       redraw()
+      return
+    }
+    if ((tool === 'drawArea' || tool === 'erase') && areaStartRef.current && areaCurrentRef.current) {
+      pushHistory()
+      applyRectArea(
+        areaStartRef.current.x,
+        areaStartRef.current.y,
+        areaCurrentRef.current.x,
+        areaCurrentRef.current.y,
+        tool === 'drawArea',
+      )
+      areaStartRef.current = null
+      areaCurrentRef.current = null
+      rebuildMask()
+      redraw()
     }
   }
   function onCanvasClick(e: ReactMouseEvent<HTMLCanvasElement>) {
-    if (tool === 'wall') return // 벽은 드래그로 처리
+    if (tool === 'wall' || tool === 'drawArea' || tool === 'erase') return // 드래그로 처리
     const { x, y } = getXY(e)
     if (tool === 'scale') {
       const pts = scalePointsRef.current
@@ -325,14 +495,6 @@ export default function MapReviewPage() {
     redraw()
   }
 
-  function undo() {
-    const prev = historyRef.current.pop()
-    if (!prev) return
-    walkableRef.current = prev.w
-    barrierRef.current = prev.b
-    rebuildMask()
-    redraw()
-  }
   function clearAll() {
     const wk = walkableRef.current
     const br = barrierRef.current
@@ -343,6 +505,33 @@ export default function MapReviewPage() {
     rebuildMask()
     redraw()
   }
+
+  function applyGapFill() {
+    const base = baseCanvasRef.current
+    const wk = walkableRef.current
+    const br = barrierRef.current
+    const gapM = Number(gapFillM)
+    if (!base || !wk || !br || !savedScale || !Number.isFinite(gapM) || gapM <= 0) return
+    const r = Math.max(1, Math.round(gapM / 2 / savedScale.scaleMPerPx))
+    pushHistory()
+    walkableRef.current = closeGaps(wk, br, base.width, base.height, r)
+    rebuildMask()
+    redraw()
+  }
+
+  function applyNoiseRemove() {
+    const base = baseCanvasRef.current
+    const wk = walkableRef.current
+    const br = barrierRef.current
+    const noiseM = Number(noiseRemoveM)
+    if (!base || !wk || !br || !savedScale || !Number.isFinite(noiseM) || noiseM <= 0) return
+    const r = Math.max(1, Math.round(noiseM / 2 / savedScale.scaleMPerPx))
+    pushHistory()
+    walkableRef.current = openNoise(wk, br, base.width, base.height, r)
+    rebuildMask()
+    redraw()
+  }
+
   function onSave() {
     const mask = maskCanvasRef.current
     const base = baseCanvasRef.current
@@ -410,8 +599,9 @@ export default function MapReviewPage() {
       <div className="flex gap-6 items-start">
         <div className="flex-1 min-w-0">
           <div
-            className="w-full border border-line rounded-lg overflow-hidden bg-white"
-            style={{ cursor: 'crosshair' }}
+            ref={stageRef}
+            className="relative w-full border border-line rounded-lg bg-white overflow-auto"
+            style={{ cursor: 'crosshair', maxHeight: '70vh' }}
           >
             {dims && (
               <canvas
@@ -423,13 +613,36 @@ export default function MapReviewPage() {
                 onMouseMove={onMouseMove}
                 onMouseUp={onMouseUp}
                 onMouseLeave={onMouseUp}
-                style={{ display: 'block', width: '100%', height: 'auto' }}
+                style={{ display: 'block', margin: '0 auto', width: dims.w * dispScale, height: dims.h * dispScale }}
               />
             )}
+            <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-white/95 border border-line rounded-lg shadow-sm p-1">
+              <button
+                type="button"
+                onClick={() => zoomBy(1 / 1.3)}
+                className="w-7 h-7 rounded-md text-sm font-medium text-body hover:bg-gray-50"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                onClick={resetZoom}
+                className="px-2 h-7 rounded-md text-[12px] font-medium text-muted hover:bg-gray-50 whitespace-nowrap"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                type="button"
+                onClick={() => zoomBy(1.3)}
+                className="w-7 h-7 rounded-md text-sm font-medium text-body hover:bg-gray-50"
+              >
+                +
+              </button>
+            </div>
           </div>
           <p className="mt-2 text-[13px] text-muted">
             영역을 <strong>클릭</strong>하면 통행 영역이 채워집니다. 출입구처럼 벽이 뚫려 밖으로 샐 때는{' '}
-            <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요.
+            <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요. Ctrl(⌘)+휠로 확대할 수 있어요.
           </p>
         </div>
 
@@ -437,9 +650,19 @@ export default function MapReviewPage() {
           <h3>도구</h3>
           <div className="grid gap-2">
             {toolBtn('fill', '영역 채우기')}
+            {toolBtn('drawArea', '영역 그리기 (사각형)')}
             {toolBtn('wall', '벽 그리기 (틈 막기)')}
-            {toolBtn('erase', '영역 지우기')}
+            {toolBtn('erase', '영역 지우기 (사각형)')}
             {toolBtn('scale', '축척 설정')}
+          </div>
+
+          <div className="undo-row grid grid-cols-2 gap-2 mt-2">
+            <Button variant="outline" onClick={undo} title="실행 취소 (Ctrl+Z)">
+              ← 되돌리기
+            </Button>
+            <Button variant="outline" onClick={redo} title="다시 실행 (Ctrl+Shift+Z)">
+              다시 실행 →
+            </Button>
           </div>
 
           <div className="mt-4">
@@ -458,6 +681,60 @@ export default function MapReviewPage() {
           </div>
 
           <div className="mt-4">
+            <span className="block text-[13px] text-muted mb-2">틈 메우기 (떨어진 복도 이어붙이기)</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] text-muted">최대</span>
+              <input
+                type="number"
+                min={0.01}
+                step={0.05}
+                value={gapFillM}
+                onChange={(e) => setGapFillM(e.target.value)}
+                className="w-16 h-9 px-2 rounded-lg border border-line bg-field text-sm outline-none text-right"
+              />
+              <span className="text-[12px] text-muted">m</span>
+            </div>
+            <Button
+              variant="outline"
+              className="w-full mt-2"
+              disabled={!savedScale}
+              onClick={applyGapFill}
+            >
+              틈 메우기 적용
+            </Button>
+          </div>
+
+          <div className="mt-4">
+            <span className="block text-[13px] text-muted mb-2">노이즈 제거 (돌출부·구멍 깎기)</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] text-muted">최대</span>
+              <input
+                type="number"
+                min={0.01}
+                step={0.05}
+                value={noiseRemoveM}
+                onChange={(e) => setNoiseRemoveM(e.target.value)}
+                className="w-16 h-9 px-2 rounded-lg border border-line bg-field text-sm outline-none text-right"
+              />
+              <span className="text-[12px] text-muted">m</span>
+            </div>
+            <Button
+              variant="outline"
+              className="w-full mt-2"
+              disabled={!savedScale}
+              onClick={applyNoiseRemove}
+            >
+              노이즈 제거 적용
+            </Button>
+          </div>
+
+          {!savedScale && (
+            <p className="text-[12px] text-muted mt-2">
+              틈 메우기·노이즈 제거는 축척을 먼저 설정해야 사용할 수 있습니다.
+            </p>
+          )}
+
+          <div className="mt-4">
             <span className="block text-[13px] text-muted mb-2">축척</span>
             {savedScale ? (
               <p className="text-[13px] text-ink">
@@ -474,9 +751,6 @@ export default function MapReviewPage() {
           </div>
 
           <div className="grid gap-2 mt-4">
-            <Button variant="outline" onClick={undo}>
-              되돌리기
-            </Button>
             <Button variant="outline" onClick={clearAll}>
               전체 지우기
             </Button>
