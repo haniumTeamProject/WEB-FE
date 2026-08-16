@@ -10,21 +10,22 @@ import {
   useUpdateBeacon,
 } from '@/features/beacons/hooks'
 import { useMask, useScale } from '@/features/mapEditor/hooks'
-import type { Beacon } from '@/types/domain'
 import { FloorMapCanvas } from '@/components/map/FloorMapCanvas'
 import type { MapPoint } from '@/components/map/FloorMapCanvas'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
+import { Toggle } from '@/components/ui/Toggle'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { AsyncState } from '@/components/ui/AsyncState'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { BEACON_TYPE_COLOR as TYPE_COLOR, BEACON_TYPE_LABEL as TYPE_LABEL, MAP_DESIGN_W } from '@/lib/constants'
-import { diffImport, parseMappinProjectFile, toDesignCoords } from '@/lib/mapImport'
-import type { ImportPlan } from '@/lib/mapImport'
 import { D_MAX_M, planReinforcementBeacons } from '@/lib/reinforcementBeacons'
 import type { ReinforcementPlanItem } from '@/lib/reinforcementBeacons'
+import { parseMappinProjectFile, toDesignCoords, diffImport } from '@/lib/mapImport'
+import type { ImportPlan } from '@/lib/mapImport'
+import type { Beacon } from '@/types/domain'
 
 const PENDING_ID = '__pending__'
 
@@ -34,7 +35,7 @@ export default function BeaconListPage() {
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
   const { data: beacons, isLoading: beaconsLoading, isError: beaconsError, refetch: refetchBeacons } = useBeacons(floorId)
-  const { data: mask } = useMask(floorId)
+  const { data: mask, isLoading: maskLoading } = useMask(floorId)
   const { data: scale } = useScale(floorId)
   const create = useCreateBeacon(floorId)
   const update = useUpdateBeacon(floorId)
@@ -45,16 +46,18 @@ export default function BeaconListPage() {
   const [minor, setMinor] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null)
-
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [importPlan, setImportPlan] = useState<ImportPlan<Beacon> | null>(null)
-  const [importError, setImportError] = useState<string | null>(null)
-  const [importing, setImporting] = useState(false)
+  const [alignSnapEnabled, setAlignSnapEnabled] = useState(true)
+  const [corridorSnapEnabled, setCorridorSnapEnabled] = useState(true)
 
   const [reinforcePlan, setReinforcePlan] = useState<ReinforcementPlanItem[] | null>(null)
   const [reinforceError, setReinforceError] = useState<string | null>(null)
   const [planning, setPlanning] = useState(false)
   const [applyingReinforce, setApplyingReinforce] = useState(false)
+
+  const importFileInputRef = useRef<HTMLInputElement>(null)
+  const [importPlan, setImportPlan] = useState<ImportPlan<Beacon> | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
 
   const valid = name.trim() !== '' && minor !== '' && Number.isInteger(Number(minor)) && !!pendingPos
 
@@ -131,41 +134,65 @@ export default function BeaconListPage() {
     }
   }
 
-  async function onImportFile(e: ChangeEvent<HTMLInputElement>) {
+  async function onImportFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    e.target.value = ''
+    e.target.value = '' // 같은 파일을 다시 골라도 change가 뜨도록
     if (!file) return
     setImportError(null)
     try {
       const project = await parseMappinProjectFile(file)
-      const sources = project.beacons.map((b) => ({
-        uid: b.uid,
-        label: b.id,
-        ...toDesignCoords(b.x, b.y, project.origW),
-      }))
-      setImportPlan(diffImport(beacons ?? [], sources))
+      const sources = project.beacons.map((b) => {
+        const { x, y } = toDesignCoords(b.x, b.y, project.origW)
+        return { uid: b.uid, label: b.id, x, y }
+      })
+      const plan = diffImport(beacons ?? [], sources)
+      if (plan.toCreate.length === 0 && plan.toUpdate.length === 0 && plan.toDelete.length === 0) {
+        setImportError('변경 사항이 없습니다 — 이미 최신 상태입니다.')
+        return
+      }
+      setImportPlan(plan)
     } catch (err) {
       setImportError(err instanceof Error ? err.message : '가져오기에 실패했습니다.')
     }
   }
 
-  async function confirmImport() {
+  // 지금 등록된 비콘을 mapImport.ts가 읽을 수 있는 mappinProject 형식으로 내보낸다 — 이 파일을 다시
+  // "지도 데이터 가져오기"에 넣으면 그대로 복원된다(백업 겸 다른 층/환경으로 옮기는 용도).
+  function onExport() {
+    const payload = {
+      mappinProject: true,
+      origW: MAP_DESIGN_W,
+      beacons: (beacons ?? [])
+        .filter((b) => b.x != null && b.y != null)
+        .map((b) => ({ id: b.sourceLabel ?? b.name, uid: b.sourceUid ?? b.id, x: b.x as number, y: b.y as number })),
+      landmarks: [],
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `beacons-${floorId}-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  async function confirmImportBeacons() {
     if (!importPlan) return
     setImporting(true)
     try {
       let nextMinor = (beacons ?? []).reduce((max, b) => Math.max(max, b.minor), 0) + 1
       for (const source of importPlan.toCreate) {
         await create.mutateAsync({
-          name: source.label,
+          name: source.label, // map-tool엔 이름이 없어 표시 라벨(B3 등)을 우선 이름으로 씀 — 목록에서 편집 가능
           minor: nextMinor++,
           type: 'semantic',
-          sourceUid: source.uid,
-          sourceLabel: source.label,
           x: source.x,
           y: source.y,
+          sourceUid: source.uid,
+          sourceLabel: source.label,
         })
       }
       for (const { target, source } of importPlan.toUpdate) {
+        // 위치만 갱신 — 관리자가 입력한 이름·MAC·타입은 그대로 유지
         await update.mutateAsync({
           beaconId: target.id,
           input: { x: source.x, y: source.y, sourceLabel: source.label },
@@ -215,6 +242,25 @@ export default function BeaconListPage() {
     { label: '비콘' },
   ]
 
+  if (maskLoading) return <p className="text-muted">불러오는 중…</p>
+
+  // 통행 영역(마스크)이 없으면 복도 중앙 스냅이 아예 동작하지 않는데, 그 상태로 비콘을 미리 찍어두면
+  // 나중에 지도 검수를 마친 뒤 위치가 복도에서 벗어나 있어 다시 손봐야 한다 — 아예 먼저 하도록 막는다.
+  if (!mask?.dataUrl) {
+    return (
+      <div>
+        <Breadcrumb items={crumbs} />
+        <h1>비콘 등록</h1>
+        <Card>
+          <p className="text-muted">지도 검수에서 통행 영역을 먼저 저장해야 비콘을 배치할 수 있습니다.</p>
+          <Link to={`/buildings/${buildingId}/floors/${floorId}/map`} className="inline-block mt-3">
+            <Button>지도 검수로 이동</Button>
+          </Link>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div>
       <Breadcrumb items={crumbs} />
@@ -230,12 +276,31 @@ export default function BeaconListPage() {
               else update.mutate({ beaconId: id, input: { x, y } })
             }}
             onCanvasClick={(x, y) => setPendingPos({ x, y })}
-            snapToCorridorCenter
+            snapToCorridorCenter={corridorSnapEnabled}
+            alignSnapEnabled={alignSnapEnabled}
           />
-          <div className="flex flex-wrap gap-4 mt-2 text-[13px] text-muted">
+          <div className="flex flex-wrap items-center gap-4 mt-2 text-[13px] text-muted">
             <span style={{ color: TYPE_COLOR.semantic }}>● 의미비콘</span>
             <span style={{ color: TYPE_COLOR.reinforcement }}>● 보강비콘</span>
             <span>· 지도를 클릭해 새 비콘 위치 지정 · 드래그하면 복도 중심에 자동으로 붙습니다</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-3 text-[13px]">
+            <label className="flex items-center gap-2.5">
+              <span className="text-muted">복도 중앙 스냅</span>
+              <Toggle checked={corridorSnapEnabled} onChange={setCorridorSnapEnabled} />
+            </label>
+            {corridorSnapEnabled && !scale && (
+              <span style={{ color: '#DC4C4C' }}>
+                ⚠ 축척 미설정 — 지도 검수에서 축척을 먼저 설정해야 복도 폭을 정확히 판단합니다
+              </span>
+            )}
+            {corridorSnapEnabled && scale && (
+              <span className="text-muted">현재 축척: 100px ≈ {(scale.scaleMPerPx * 100).toFixed(2)}m</span>
+            )}
+            <label className="flex items-center gap-2.5">
+              <span className="text-muted">다른 비콘과 정렬 스냅</span>
+              <Toggle checked={alignSnapEnabled} onChange={setAlignSnapEnabled} />
+            </label>
           </div>
         </div>
 
@@ -273,16 +338,24 @@ export default function BeaconListPage() {
           <h3>등록된 비콘</h3>
           <div className="flex gap-2">
             <input
-              ref={fileInputRef}
+              ref={importFileInputRef}
               type="file"
-              accept="application/json"
+              accept="application/json,.json"
               className="hidden"
-              onChange={onImportFile}
+              onChange={onImportFileChange}
             />
             <Button
               variant="outline"
               style={{ height: 34, padding: '0 12px' }}
-              onClick={() => fileInputRef.current?.click()}
+              disabled={!beacons || beacons.length === 0}
+              onClick={onExport}
+            >
+              내보내기
+            </Button>
+            <Button
+              variant="outline"
+              style={{ height: 34, padding: '0 12px' }}
+              onClick={() => importFileInputRef.current?.click()}
             >
               지도 데이터 가져오기
             </Button>
@@ -301,8 +374,8 @@ export default function BeaconListPage() {
             보강비콘 자동생성은 지도 검수(마스크)와 축척 설정을 먼저 완료해야 사용할 수 있습니다.
           </p>
         )}
-        {importError && <p className="text-[13px] mt-2" style={{ color: '#DC4C4C' }}>{importError}</p>}
         {reinforceError && <p className="text-[13px] mt-2" style={{ color: '#DC4C4C' }}>{reinforceError}</p>}
+        {importError && <p className="text-[13px] mt-2" style={{ color: '#DC4C4C' }}>{importError}</p>}
         {beaconsLoading && <AsyncState status="loading" />}
         {beaconsError && <AsyncState status="error" onRetry={() => refetchBeacons()} />}
         <div className="grid gap-2 mt-3">
@@ -354,21 +427,6 @@ export default function BeaconListPage() {
       />
 
       <ConfirmDialog
-        open={!!importPlan}
-        title="지도 데이터를 가져올까요?"
-        description={
-          importPlan
-            ? `생성 ${importPlan.toCreate.length} · 갱신 ${importPlan.toUpdate.length} · 삭제 ${importPlan.toDelete.length} — 기존에 입력한 이름·MAC은 유지됩니다.`
-            : undefined
-        }
-        confirmLabel="가져오기"
-        confirmVariant="primary"
-        pending={importing}
-        onCancel={() => setImportPlan(null)}
-        onConfirm={confirmImport}
-      />
-
-      <ConfirmDialog
         open={!!reinforcePlan}
         title="보강비콘을 자동생성할까요?"
         description={
@@ -381,6 +439,21 @@ export default function BeaconListPage() {
         pending={applyingReinforce}
         onCancel={() => setReinforcePlan(null)}
         onConfirm={confirmReinforce}
+      />
+
+      <ConfirmDialog
+        open={!!importPlan}
+        title="지도 데이터를 가져올까요?"
+        description={
+          importPlan
+            ? `새로 추가 ${importPlan.toCreate.length}개 · 위치 갱신 ${importPlan.toUpdate.length}개 · 삭제 ${importPlan.toDelete.length}개. 직접 추가한 비콘은 영향받지 않습니다. 새로 추가되는 비콘의 이름·MAC은 이후 목록에서 편집할 수 있습니다.`
+            : undefined
+        }
+        confirmLabel="가져오기"
+        confirmVariant="primary"
+        pending={importing}
+        onCancel={() => setImportPlan(null)}
+        onConfirm={confirmImportBeacons}
       />
     </div>
   )

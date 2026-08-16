@@ -3,8 +3,6 @@
 // 양쪽 벽 사이 중점으로 스냅한다. 세로 복도면 좌우 중심(가로 스냅), 가로 복도면 상하 중심(세로 스냅).
 // 한쪽이라도 벽을 못 찾으면(열린 공간) 스냅하지 않는다.
 
-const MAX_STEPS = 300
-
 export interface SnapResult {
   x: number // 스냅된 마스크 픽셀 좌표
   y: number
@@ -20,10 +18,11 @@ function castRay(
   y0: number,
   dx: number,
   dy: number,
+  maxSteps: number,
 ): { x: number; y: number; hit: boolean } {
   let x = x0
   let y = y0
-  for (let steps = 0; steps < MAX_STEPS; steps++) {
+  for (let steps = 0; steps < maxSteps; steps++) {
     x += dx
     y += dy
     const xi = Math.round(x)
@@ -45,10 +44,12 @@ export function findCorridorSnap(
   const yi = Math.round(py)
   if (xi < 0 || yi < 0 || xi >= w || yi >= h || !walkable[yi * w + xi]) return null
 
-  const left = castRay(w, h, walkable, px, py, -1, 0)
-  const right = castRay(w, h, walkable, px, py, 1, 0)
-  const up = castRay(w, h, walkable, px, py, 0, -1)
-  const down = castRay(w, h, walkable, px, py, 0, 1)
+  // 큰 방에서도 벽을 찾을 수 있도록 마스크 전체 크기만큼은 레이캐스팅한다(고정 스텝 수로는 넓은 공간에서 못 찾음).
+  const maxSteps = Math.max(w, h)
+  const left = castRay(w, h, walkable, px, py, -1, 0, maxSteps)
+  const right = castRay(w, h, walkable, px, py, 1, 0, maxSteps)
+  const up = castRay(w, h, walkable, px, py, 0, -1, maxSteps)
+  const down = castRay(w, h, walkable, px, py, 0, 1, maxSteps)
 
   const hSpan = left.hit && right.hit ? Math.hypot(right.x - left.x, right.y - left.y) : Infinity
   const vSpan = up.hit && down.hit ? Math.hypot(down.x - up.x, down.y - up.y) : Infinity

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import Konva from 'konva'
-import { Stage, Layer, Image as KonvaImage, Circle, Line, Text } from 'react-konva'
+import { Stage, Layer, Image as KonvaImage, Circle, Group, Line, Text } from 'react-konva'
 import { useFloorplan } from '@/features/floorplan/hooks'
 import { useMask } from '@/features/mapEditor/hooks'
 import { MAP_DESIGN_W as DESIGN_W } from '@/lib/constants'
@@ -8,6 +9,7 @@ import { snapToGrid } from '@/lib/utils'
 import { rasterizeMask } from '@/lib/maskRaster'
 import type { RasterizedMask } from '@/lib/maskRaster'
 import { findCorridorSnap } from '@/lib/corridorSnap'
+import { findBeaconAlign } from '@/lib/beaconAlign'
 
 export interface MapPoint {
   id: string
@@ -22,6 +24,10 @@ export interface MapPoint {
 
 const MIN_ZOOM = 1 // 기본 화면(맞춤 배율) 밑으로는 축소 못 하게
 const MAX_ZOOM = 6
+// 다른 비콘 정렬 스냅이 실제 화면에서 항상 비슷한 크기로 느껴지도록, 줌과 무관한 레이어 좌표 임계값을
+// 줌 배율로 나눠서 써서 "화면상 몇 px" 기준으로 맞춘다 — 그대로 고정값을 쓰면 기본 배율(줌 1)에서는
+// 마우스로 맞추기 힘들 만큼 좁고, 확대했을 땐 반대로 너무 헐렁해진다.
+const ALIGN_THRESHOLD_SCREEN_PX = 8
 
 // 설계도 배경 + 드래그 가능한 점들. 비콘·목적지·연결자 배치에 공용.
 // 부모(flex-1 등)가 내준 가로 폭을 그대로 채운다 — 폭은 ResizeObserver로 측정.
@@ -31,16 +37,19 @@ export function FloorMapCanvas({
   onMove,
   onCanvasClick,
   snapToCorridorCenter,
+  alignSnapEnabled,
 }: {
   floorId: string
   points: MapPoint[]
   onMove?: (id: string, x: number, y: number) => void
   onCanvasClick?: (x: number, y: number) => void
   snapToCorridorCenter?: boolean // 드래그 중 마스크 기준 복도 중심으로 자동 스냅(비콘 배치용)
+  alignSnapEnabled?: boolean // 드래그 중 다른 점과 x/y가 맞으면 정렬 스냅(복도 중심 스냅이 우선)
 }) {
   const { data: floorplan } = useFloorplan(floorId)
   const { data: mask } = useMask(snapToCorridorCenter ? floorId : '')
   const [loadedImg, setLoadedImg] = useState<{ url: string; image: HTMLImageElement } | null>(null)
+  const [loadedMaskImg, setLoadedMaskImg] = useState<{ url: string; image: HTMLImageElement } | null>(null)
   const [rasterized, setRasterized] = useState<RasterizedMask | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<Konva.Stage>(null)
@@ -49,6 +58,9 @@ export function FloorMapCanvas({
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
   const [pointDragging, setPointDragging] = useState(false)
   const [snapGuide, setSnapGuide] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  const [alignGuides, setAlignGuides] = useState<{ x1: number; y1: number; x2: number; y2: number }[]>([])
+  // 드래그 중 복도·정렬 스냅이 고정한 축 — 드롭 시 그 축까지 grid snap으로 다시 반올림해 어긋나지 않게 한다.
+  const lockedAxisRef = useRef<'x' | 'y' | null>(null)
 
   useLayoutEffect(() => {
     const el = containerRef.current
@@ -71,6 +83,19 @@ export function FloorMapCanvas({
     image.src = url
   }, [floorplan?.imageUrl])
 
+  // 통행영역(마스크)을 지도 검수와 같은 반투명 파랑으로 배경 위에 겹쳐 보여준다 — 복도 지정이 실제로
+  // 어디까지 돼 있는지 비콘 배치 화면에서도 눈으로 바로 확인할 수 있게.
+  useEffect(() => {
+    const url = mask?.dataUrl
+    if (!url) {
+      setLoadedMaskImg(null)
+      return
+    }
+    const image = new window.Image()
+    image.onload = () => setLoadedMaskImg({ url, image })
+    image.src = url
+  }, [mask?.dataUrl])
+
   useEffect(() => {
     let cancelled = false
     const next = mask ? rasterizeMask(mask) : Promise.resolve(null)
@@ -88,6 +113,17 @@ export function FloorMapCanvas({
   const scale = width / DESIGN_W
   const maskRatio = rasterized ? rasterized.w / DESIGN_W : 1 // 마스크 픽셀 폭 / 설계도(900) 폭
   const H = displayImg ? Math.round((displayImg.height / displayImg.width) * width) : Math.round(560 * scale)
+
+  // maskX/Y 변환(아래 dragBoundFunc)은 마스크의 가로세로 비율이 설계도 이미지와 정확히 같다고 가정한다
+  // (마스크 폭 기준 비율 하나로 x·y를 동시에 환산). 예전 설계도로 그린 마스크가 재업로드 후에도 안 지워지고
+  // 남는 등, 어떤 경로로든 마스크·설계도 비율이 어긋나면 "화면엔 파랗게 보이는데 실제론 통행불가로 계산되는"
+  // 것처럼 좌표가 조용히 다 틀어진다 — 조용히 틀리는 대신 바로 눈에 띄게 경고한다.
+  const maskAspectMismatch =
+    rasterized && displayImg
+      ? Math.abs(rasterized.w / rasterized.h - displayImg.width / displayImg.height) /
+          (displayImg.width / displayImg.height) >
+        0.02
+      : false
 
   function zoomBy(factor: number) {
     setZoom((z) => Math.min(Math.max(z * factor, MIN_ZOOM), MAX_ZOOM))
@@ -150,14 +186,100 @@ export function FloorMapCanvas({
         onWheel={onWheel}
         onClick={handleStageClick}
       >
-        <Layer listening={false}>{displayImg && <KonvaImage image={displayImg} width={width} height={H} />}</Layer>
+        <Layer listening={false}>
+          {displayImg && <KonvaImage image={displayImg} width={width} height={H} />}
+          {loadedMaskImg && <KonvaImage image={loadedMaskImg.image} width={width} height={H} opacity={0.45} />}
+        </Layer>
         <Layer>
           {points.map((p) => (
-            <Fragment key={p.id}>
+            <Group
+              key={p.id}
+              x={p.x * scale}
+              y={p.y * scale}
+              draggable={!!onMove && p.draggable !== false}
+              dragBoundFunc={
+                (snapToCorridorCenter && rasterized) || alignSnapEnabled
+                  ? function (pos: { x: number; y: number }) {
+                      // Konva가 dragBoundFunc에 넘기는 pos는 스테이지 절대 좌표(줌·화면이동이 반영된 값)이고,
+                      // 반환값도 같은 절대 좌표로 기대된다(내부적으로 setAbsolutePosition에 그대로 적용됨).
+                      // 여기 아래 로직은 전부 "줌 1배·화면 이동 없음" 기준의 Layer-local(=p.x*scale) 좌표를
+                      // 전제로 짜여 있었는데, 기본 배율·중앙 정렬 상태에서는 두 좌표계가 우연히 같아서 문제가
+                      // 안 드러났을 뿐이다 — 확대하거나 화면을 이동한 상태에서 정렬·복도 스냅이 엉뚱한 곳으로
+                      // 튀던 원인이 바로 이 좌표계 불일치였다. 들어올 때 local로 변환하고, 반환 직전 다시
+                      // 절대 좌표로 되돌린다.
+                      const local = { x: (pos.x - stagePos.x) / zoom, y: (pos.y - stagePos.y) / zoom }
+
+                      // 다른 비콘과의 정렬(구체적인 특정 비콘 좌표에 맞추려는 의도)이 복도 중앙 스냅(일반적인
+                      // 통로 폭 추정)보다 우선한다 — 복도 스냅은 폭 제한이 없어 거의 항상 무언가를 찾아내므로,
+                      // 복도 스냅을 먼저 보면 근처 비콘과 정렬하려는 의도가 거의 항상 가려져 버린다.
+                      let result = local
+                      let axis: 'x' | 'y' | null = null
+                      let nextSnapGuide: typeof snapGuide = null
+                      let nextAlignGuides: typeof alignGuides = []
+
+                      if (alignSnapEnabled) {
+                        const others = points
+                          .filter((q) => q.id !== p.id)
+                          .map((q) => ({ x: q.x * scale, y: q.y * scale }))
+                        const alignThreshold = ALIGN_THRESHOLD_SCREEN_PX / zoom
+                        const align = findBeaconAlign(local.x, local.y, others, alignThreshold)
+                        if (align) {
+                          nextAlignGuides = align.guides
+                          axis = align.axis
+                          result = { x: align.x, y: align.y }
+                        }
+                      }
+                      if (axis === null && snapToCorridorCenter && rasterized) {
+                        const maskX = (local.x / scale) * maskRatio
+                        const maskY = (local.y / scale) * maskRatio
+                        const snap = findCorridorSnap(rasterized.w, rasterized.h, rasterized.walkable, maskX, maskY)
+                        if (snap) {
+                          nextSnapGuide = {
+                            x1: (snap.guide.x1 / maskRatio) * scale,
+                            y1: (snap.guide.y1 / maskRatio) * scale,
+                            x2: (snap.guide.x2 / maskRatio) * scale,
+                            y2: (snap.guide.y2 / maskRatio) * scale,
+                          }
+                          axis = snap.axis
+                          result = { x: (snap.x / maskRatio) * scale, y: (snap.y / maskRatio) * scale }
+                        }
+                      }
+
+                      // 가이드선은 React state로 그리는데, Konva는 dragBoundFunc가 반환한 좌표를 리액트
+                      // 렌더링을 기다리지 않고 즉시 점에 반영한다 — flushSync 없이 setState만 하면 리액트가
+                      // 다음 렌더를 배치(batch)하면서 지연시켜, 점은 이미 새 위치에 가 있는데 가이드선은
+                      // 이전 프레임 위치를 그리는 어긋남이 생긴다(정렬이 점선과 다른 곳으로 되는 것처럼 보임).
+                      flushSync(() => {
+                        setAlignGuides(nextAlignGuides)
+                        setSnapGuide(nextSnapGuide)
+                      })
+                      lockedAxisRef.current = axis
+                      // Konva가 이 반환값을 setAbsolutePosition으로 그대로 적용하므로, local(줌·이동 무관)
+                      // 좌표를 다시 절대 좌표로 되돌려서 반환한다.
+                      return { x: result.x * zoom + stagePos.x, y: result.y * zoom + stagePos.y }
+                    }
+                  : undefined
+              }
+              onDragStart={(e) => {
+                e.cancelBubble = true
+                setPointDragging(true)
+              }}
+              onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) => {
+                e.cancelBubble = true
+                setPointDragging(false)
+                setSnapGuide(null)
+                setAlignGuides([])
+                const rawX = Math.round(e.target.x() / scale)
+                const rawY = Math.round(e.target.y() / scale)
+                // 복도·정렬 스냅이 고정한 축은 grid snap으로 다시 반올림하지 않는다 — 안 그러면 눈에 보이던 정렬이 최대 2px 어긋난다.
+                const finalX = lockedAxisRef.current === 'x' ? rawX : snapToGrid(rawX)
+                const finalY = lockedAxisRef.current === 'y' ? rawY : snapToGrid(rawY)
+                lockedAxisRef.current = null
+                onMove?.(p.id, finalX, finalY)
+              }}
+            >
               {p.radiusHintPx != null && (
                 <Circle
-                  x={p.x * scale}
-                  y={p.y * scale}
                   radius={p.radiusHintPx * scale}
                   fill="rgba(75,112,229,0.08)"
                   stroke="rgba(75,112,229,0.35)"
@@ -166,58 +288,20 @@ export function FloorMapCanvas({
                   listening={false}
                 />
               )}
+              {/* 실제 점보다 훨씬 넓은 히트 영역 — 작은 점을 살짝 빗맞혀도 배경(지도)이 아니라 점이 드래그되게 함.
+                  Konva는 fill="transparent"를 히트 테스트 대상에서 제외하므로 거의 투명한 실제 색을 쓴다. */}
+              <Circle radius={((p.radius ?? 9) + 10) / zoom} fill="rgba(0,0,0,0.01)" />
+              {/* 반지름·테두리·글자 크기를 확대 배율로 나눠 화면상 크기를 고정한다 — 안 그러면 확대할수록
+                  점과 글자가 커져서 서로 겹치거나 옆의 다른 점·가이드선을 가린다. */}
               <Circle
-                x={p.x * scale}
-                y={p.y * scale}
-                radius={p.radius ?? 9}
+                radius={(p.radius ?? 9) / zoom}
                 fill={p.color}
                 stroke="#fff"
-                strokeWidth={2}
-                draggable={!!onMove && p.draggable !== false}
-                dragBoundFunc={
-                  snapToCorridorCenter && rasterized
-                    ? function (pos: { x: number; y: number }) {
-                        const maskX = (pos.x / scale) * maskRatio
-                        const maskY = (pos.y / scale) * maskRatio
-                        const snap = findCorridorSnap(rasterized.w, rasterized.h, rasterized.walkable, maskX, maskY)
-                        if (!snap) {
-                          setSnapGuide(null)
-                          return pos
-                        }
-                        setSnapGuide({
-                          x1: (snap.guide.x1 / maskRatio) * scale,
-                          y1: (snap.guide.y1 / maskRatio) * scale,
-                          x2: (snap.guide.x2 / maskRatio) * scale,
-                          y2: (snap.guide.y2 / maskRatio) * scale,
-                        })
-                        return { x: (snap.x / maskRatio) * scale, y: (snap.y / maskRatio) * scale }
-                      }
-                    : undefined
-                }
-                onDragStart={(e) => {
-                  e.cancelBubble = true
-                  setPointDragging(true)
-                }}
-                onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) => {
-                  e.cancelBubble = true
-                  setPointDragging(false)
-                  setSnapGuide(null)
-                  onMove?.(
-                    p.id,
-                    snapToGrid(Math.round(e.target.x() / scale)),
-                    snapToGrid(Math.round(e.target.y() / scale)),
-                  )
-                }}
-              />
-              <Text
-                x={p.x * scale + 12}
-                y={p.y * scale - 7}
-                text={p.label}
-                fontSize={12}
-                fill="#2E3648"
+                strokeWidth={2 / zoom}
                 listening={false}
               />
-            </Fragment>
+              <Text x={12 / zoom} y={-7 / zoom} text={p.label} fontSize={12 / zoom} fill="#2E3648" listening={false} />
+            </Group>
           ))}
           {snapGuide && (
             <Fragment>
@@ -249,6 +333,16 @@ export function FloorMapCanvas({
               })}
             </Fragment>
           )}
+          {alignGuides.map((g, i) => (
+            <Line
+              key={i}
+              points={[g.x1, g.y1, g.x2, g.y2]}
+              stroke="#F2992E"
+              strokeWidth={1.5}
+              dash={[4, 4]}
+              listening={false}
+            />
+          ))}
         </Layer>
       </Stage>
 
@@ -275,6 +369,13 @@ export function FloorMapCanvas({
           +
         </button>
       </div>
+
+      {maskAspectMismatch && (
+        <div className="absolute top-1 left-1 right-1 z-10 bg-red-600 text-white text-[12px] font-medium px-2 py-1.5 rounded">
+          ⚠ 통행영역(마스크)이 현재 설계도와 가로세로 비율이 다릅니다 — 복도·정렬 스냅 좌표가 어긋날 수 있어요.
+          지도 검수에서 통행영역을 다시 확인/저장해주세요.
+        </div>
+      )}
     </div>
   )
 }

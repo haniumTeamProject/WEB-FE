@@ -28,6 +28,8 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
   h1 {
     @apply text-2xl font-bold text-ink mb-5;

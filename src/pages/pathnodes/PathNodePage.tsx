@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Konva from 'konva'
 import { Stage, Layer, Image as KonvaImage, Circle, Line } from 'react-konva'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -31,7 +31,23 @@ function nodeColor(node: PathNode): string {
   return node.pairKind ? ENTRANCE_COLOR[node.pairKind] : '#7c3aed'
 }
 
+// 건너기(cross) 엣지가 a->b 한쪽 방향만 가능하다는 걸 점선만으로는 알기 어려워서, 화살촉 삼각형 좌표를
+// 계산해 방향을 명확히 보여준다. tipX/tipY 위치에 화살촉 끝이 오도록, from->to 방향을 기준으로 그린다.
+function arrowheadPoints(fromX: number, fromY: number, tipX: number, tipY: number, size: number): number[] {
+  const angle = Math.atan2(tipY - fromY, tipX - fromX)
+  const spread = 0.5
+  return [
+    tipX,
+    tipY,
+    tipX - size * Math.cos(angle - spread),
+    tipY - size * Math.sin(angle - spread),
+    tipX - size * Math.cos(angle + spread),
+    tipY - size * Math.sin(angle + spread),
+  ]
+}
+
 const DEFAULT_CROSSING_MAX_M = 12 // 축척 미설정 시 기본 횡단 가능 거리(대략 240px 상당)
+const MIN_CORNER_CLEARANCE_M = 0.3 // 코너 횡단 좌우 최소 여유 — 이보다 벽이 가까우면 벽을 타는 걸로 보고 안 만든다
 const DEFAULT_CROSS_PENALTY_M = 5 // 건너기 페널티 기본값 — 이만큼 이상 절약될 때만 건넘
 
 function storageKey(floorId: string) {
@@ -90,6 +106,7 @@ export default function PathNodePage() {
   const { data: connectors } = useConnectors(buildingId)
   const { data: landmarks } = useLandmarks(floorId)
   const [crossingMaxM, setCrossingMaxM] = useState(String(DEFAULT_CROSSING_MAX_M))
+  const [minClearanceM, setMinClearanceM] = useState(String(MIN_CORNER_CLEARANCE_M))
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(700)
@@ -116,13 +133,15 @@ export default function PathNodePage() {
   // 로드 완료된 이미지의 URL이 현재 floorplan URL과 다르면(층 전환 등) 이전 이미지를 그리지 않는다.
   const displayImg = loadedImg && loadedImg.url === floorplan?.imageUrl ? loadedImg.image : null
 
-  const [nodes, setNodes] = useState<PathNode[]>(() => readStoredPathNodes(floorId)?.nodes ?? [])
-  const [edges, setEdges] = useState<PathEdge[]>(() => readStoredPathNodes(floorId)?.edges ?? [])
-  const [maskDims, setMaskDims] = useState<{ w: number; h: number } | null>(() => {
-    const stored = readStoredPathNodes(floorId)
-    return stored ? { w: stored.maskW, h: stored.maskH } : null
-  })
+  // 저장된 수정물이 있어도 페이지에 들어오자마자 자동으로 보여주지 않는다 — '경로 노드 생성' 버튼을
+  // 눌러야 비로소(저장된 게 있으면 그걸, 없으면 새로) 불러온다.
+  const [nodes, setNodes] = useState<PathNode[]>([])
+  const [edges, setEdges] = useState<PathEdge[]>([])
+  const [maskDims, setMaskDims] = useState<{ w: number; h: number } | null>(null)
   const [generating, setGenerating] = useState(false)
+  // TODO: 횡단(cross) 관련 신고가 또 들어오면 화면에서 바로 확인할 수 있게 임시로 남겨둔다.
+  // 문제 없이 몇 번 확인되면 지워도 된다.
+  const [genSummary, setGenSummary] = useState<string | null>(null)
 
   const [testMode, setTestMode] = useState(false)
   const [testStart, setTestStart] = useState<string | null>(null)
@@ -163,10 +182,9 @@ export default function PathNodePage() {
   if (floorId !== viewFloorId) {
     setViewFloorId(floorId)
     resetView()
-    const stored = readStoredPathNodes(floorId)
-    setNodes(stored?.nodes ?? [])
-    setEdges(stored?.edges ?? [])
-    setMaskDims(stored ? { w: stored.maskW, h: stored.maskH } : null)
+    setNodes([])
+    setEdges([])
+    setMaskDims(null)
   }
 
   // 층이 바뀌면 되돌리기/다시실행 기록도 초기화한다(ref라 렌더 중이 아니라 커밋 후 effect에서 처리).
@@ -229,6 +247,17 @@ export default function PathNodePage() {
 
   async function onGenerate() {
     if (!savedMask?.dataUrl) return
+    // 화면에 아직 아무것도 안 띄운 첫 클릭이고 이전에 저장해둔 게 있으면, 새로 만들지 않고
+    // 그 수정물을 그대로 불러온다 — 드래그로 고친 위치가 날아가지 않게.
+    if (nodes.length === 0 && edges.length === 0) {
+      const stored = readStoredPathNodes(floorId)
+      if (stored) {
+        setNodes(stored.nodes)
+        setEdges(stored.edges)
+        setMaskDims({ w: stored.maskW, h: stored.maskH })
+        return
+      }
+    }
     if (nodes.length > 0) pushHistory() // 처음 생성은 되돌릴 이전 상태가 없으니 건너뜀
     setGenerating(true)
     try {
@@ -247,11 +276,43 @@ export default function PathNodePage() {
       const crossingM = Number(crossingMaxM)
       const crossingMaxPx =
         savedScale && Number.isFinite(crossingM) && crossingM > 0 ? crossingM / savedScale.scaleMPerPx : undefined
-      const { nodes: n, edges: e } = generatePathNodes(mask, dims.w, dims.h, entrances, crossingMaxPx)
+      // 코너(벽 끝) 횡단의 옆(수직 방향) 여유가 이 거리보다 좁으면, 벽을 타면 바로 닿는 곳이라 판단해
+      // 그 방향은 횡단으로 안내하지 않는다. 이 검사는 건너기 방향과 정확히 좌우/상하인 벽만 감지하므로,
+      // 벽이 사선으로 나 있으면 값을 키워야 걸러질 수 있다.
+      const clearanceM = Number(minClearanceM)
+      const minClearancePx =
+        savedScale && Number.isFinite(clearanceM) && clearanceM >= 0 ? clearanceM / savedScale.scaleMPerPx : undefined
+      // generatePathNodes는 건너기 후보를 못 찾거나 너무 멀어서 버릴 때 console.warn을 남기는데, 개발자
+      // 도구를 못 여는 경우가 있어 그 내용을 화면에도 그대로 보여준다 — 문제 없이 몇 번 확인되면 지워도 된다.
+      const skippedWarnings: string[] = []
+      const originalWarn = console.warn
+      console.warn = (...args: unknown[]) => {
+        const msg = args.map(String).join(' ')
+        if (msg.includes('[pathNodes]')) skippedWarnings.push(msg.replace('[pathNodes] ', ''))
+        originalWarn(...args)
+      }
+      let n: PathNode[] = []
+      let e: PathEdge[] = []
+      try {
+        ;({ nodes: n, edges: e } = generatePathNodes(mask, dims.w, dims.h, entrances, crossingMaxPx, minClearancePx))
+      } finally {
+        console.warn = originalWarn
+      }
       setNodes(n)
       setEdges(e)
       setMaskDims(dims)
       persist(n, e, dims)
+      const concaveCount = n.filter((node) => node.type === 'corner' && node.concave).length
+      const convexCount = n.filter((node) => node.type === 'corner' && !node.concave).length
+      const crossCount = e.filter((edge) => edge.type === 'cross').length
+      const skippedSummary =
+        skippedWarnings.length === 0
+          ? '건너뛴 후보 없음'
+          : `건너뛴 후보 ${skippedWarnings.length}개 (${skippedWarnings.slice(0, 5).join(' / ')}${skippedWarnings.length > 5 ? ' ...' : ''})`
+      setGenSummary(
+        `노드 ${n.length}개(벽 끝 ${concaveCount} · 일반 코너 ${convexCount}) · 건너기 엣지 ${crossCount}개 · ` +
+          `횡단 최대거리=${crossingMaxPx ? Math.round(crossingMaxPx) + 'px' : '기본값(축척 미설정)'} · ${skippedSummary}`,
+      )
     } finally {
       setGenerating(false)
     }
@@ -378,14 +439,32 @@ export default function PathNodePage() {
                     const a = byId.get(edge.a)
                     const b = byId.get(edge.b)
                     if (!a || !b) return null
+                    const ax = a.x * scale
+                    const ay = a.y * scale
+                    const bx = b.x * scale
+                    const by = b.y * scale
+                    const isCross = edge.type === 'cross'
                     return (
-                      <Line
-                        key={`${edge.type}-${edge.a}-${edge.b}`}
-                        points={[a.x * scale, a.y * scale, b.x * scale, b.y * scale]}
-                        stroke={edge.type === 'cross' ? '#16a34a' : '#7c3aed'}
-                        strokeWidth={1.4}
-                        dash={edge.type === 'cross' ? [4, 3] : undefined}
-                      />
+                      <Fragment key={`${edge.type}-${edge.a}-${edge.b}`}>
+                        <Line
+                          points={[ax, ay, bx, by]}
+                          stroke={isCross ? '#16a34a' : '#7c3aed'}
+                          strokeWidth={(isCross ? 1.6 : 1) / zoom}
+                          dash={isCross ? [4 / zoom, 3 / zoom] : undefined}
+                        />
+                        {isCross && (
+                          // 화살촉 하나만, 크고 흰 테두리를 둘러서 배경(도면 선·다른 점)과 겹쳐도
+                          // 방향이 확실히 보이게 한다 — 중간 화살표는 촘촘한 교차로에서 여러 개가
+                          // 겹쳐 오히려 지저분해 보여서 뺐다.
+                          <Line
+                            points={arrowheadPoints(ax, ay, bx, by, 11 / zoom)}
+                            closed
+                            fill="#16a34a"
+                            stroke="#ffffff"
+                            strokeWidth={1.1 / zoom}
+                          />
+                        )}
+                      </Fragment>
                     )
                   })}
                 </Layer>
@@ -400,7 +479,7 @@ export default function PathNodePage() {
                           key={`test-${id}-${testResult.path[i + 1]}`}
                           points={[a.x * scale, a.y * scale, b.x * scale, b.y * scale]}
                           stroke="#dc2626"
-                          strokeWidth={3.5}
+                          strokeWidth={3 / zoom}
                           lineCap="round"
                         />
                       )
@@ -416,10 +495,10 @@ export default function PathNodePage() {
                         key={node.id}
                         x={node.x * scale}
                         y={node.y * scale}
-                        radius={isStart || isEnd ? 9 : 7}
+                        radius={(isStart || isEnd ? 9 : 7) / zoom}
                         fill={isStart ? '#16a34a' : isEnd ? '#dc2626' : node.type === 'facing' ? undefined : nodeColor(node)}
                         stroke={isStart || isEnd ? '#fff' : node.type === 'facing' ? nodeColor(node) : '#fff'}
-                        strokeWidth={isStart || isEnd ? 2 : node.type === 'facing' ? 1.6 : 1.4}
+                        strokeWidth={(isStart || isEnd ? 2 : node.type === 'facing' ? 1.6 : 1.4) / zoom}
                         draggable={!testMode}
                         onClick={() => onNodeClickForTest(node.id)}
                         onDragStart={(e: Konva.KonvaEventObject<DragEvent>) => {
@@ -447,7 +526,7 @@ export default function PathNodePage() {
             <span style={{ color: '#7c3aed' }}>● 코너</span>
             <span style={{ color: '#db2777' }}>● 벽 모서리(건너기 지점)</span>
             <span style={{ color: '#2563eb' }}>● 연결자 입구</span>
-            <span style={{ color: '#f2992e' }}>● 랜드마크 출입구</span>
+            <span style={{ color: '#f2992e' }}>● 목적지 출입구</span>
             <span>○ 맞은편 지점</span>
             <span style={{ color: '#16a34a' }}>┄ 횡단 엣지</span>
           </div>
@@ -480,9 +559,31 @@ export default function PathNodePage() {
             )}
           </div>
 
+          <div className="mt-4">
+            <span className="block text-[13px] text-muted mb-2">코너 횡단 좌우 최소 여유</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] text-muted">최소</span>
+              <input
+                type="number"
+                min={0}
+                step={0.1}
+                value={minClearanceM}
+                onChange={(e) => setMinClearanceM(e.target.value)}
+                className="w-16 h-9 px-2 rounded-lg border border-line bg-field text-sm outline-none text-right"
+              />
+              <span className="text-[12px] text-muted">m</span>
+            </div>
+            <p className="text-[12px] text-muted mt-1">
+              벽 끝(코너) 횡단선의 옆(좌우 또는 상하)으로 이 거리 안에 벽이 있으면, 벽을 타면 바로 닿는
+              곳이라 보고 그 방향은 만들지 않습니다. 0으로 두면 끕니다. 벽이 반듯하지 않고 사선으로 나
+              있으면 좌우/상하로만 재는 이 검사가 못 잡을 수 있어 값을 좀 더 키우면 도움이 됩니다.
+            </p>
+          </div>
+
           <Button className="w-full mt-4" disabled={generating} onClick={onGenerate}>
             {generating ? '생성 중…' : nodes.length ? '경로 노드 다시 생성' : '경로 노드 생성'}
           </Button>
+          {genSummary && <p className="text-[11px] text-muted mt-1.5 leading-relaxed">{genSummary}</p>}
 
           <div className="grid grid-cols-2 gap-2 mt-2">
             <Button

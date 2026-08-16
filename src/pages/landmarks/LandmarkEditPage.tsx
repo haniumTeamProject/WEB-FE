@@ -6,10 +6,12 @@ import { useDeleteLandmark, useLandmarks, useUpdateLandmark } from '@/features/l
 import type { Landmark } from '@/types/domain'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
+import { CategorySelect } from '@/components/ui/CategorySelect'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { AsyncState } from '@/components/ui/AsyncState'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { LANDMARK_CATEGORIES } from '@/lib/constants'
 
 export default function LandmarkEditPage() {
   const { buildingId = '', floorId = '', landmarkId = '' } = useParams()
@@ -60,6 +62,9 @@ export default function LandmarkEditPage() {
       <LandmarkEditForm
         key={landmark.id}
         landmark={landmark}
+        categoryOptions={Array.from(
+          new Set([...LANDMARK_CATEGORIES, ...(landmarks ?? []).map((l) => l.category).filter((c): c is string => !!c)]),
+        )}
         onSubmit={(input) => update.mutate({ landmarkId, input }, { onSuccess: () => navigate(backTo) })}
         onDelete={() => del.mutate(landmarkId, { onSuccess: () => navigate(backTo) })}
         onCancel={() => navigate(backTo)}
@@ -72,6 +77,7 @@ export default function LandmarkEditPage() {
 
 function LandmarkEditForm({
   landmark,
+  categoryOptions,
   onSubmit,
   onDelete,
   onCancel,
@@ -79,6 +85,7 @@ function LandmarkEditForm({
   deleting,
 }: {
   landmark: Landmark
+  categoryOptions: string[]
   onSubmit: (input: { name: string; category?: string }) => void
   onDelete: () => void
   onCancel: () => void
@@ -101,7 +108,13 @@ function LandmarkEditForm({
     <Card style={{ maxWidth: 560, margin: '0 auto' }}>
       <form onSubmit={handleSubmit} className="grid gap-4">
         <Input label="이름" value={name} onChange={(e) => setName(e.target.value)} />
-        <Input label="카테고리" placeholder="강의실" value={category} onChange={(e) => setCategory(e.target.value)} />
+        <CategorySelect
+          label="카테고리"
+          placeholder="강의실"
+          value={category}
+          onChange={setCategory}
+          options={categoryOptions}
+        />
         {landmark.sourceLabel && (
           <div>
             <span className="block text-[13px] text-muted mb-2">지도 라벨 (자동)</span>

@@ -3,25 +3,27 @@ import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
+import { useFloorplan } from '@/features/floorplan/hooks'
 import {
   useCreateLandmark,
   useDeleteLandmark,
   useLandmarks,
   useUpdateLandmark,
 } from '@/features/landmarks/hooks'
-import type { Landmark } from '@/types/domain'
 import { FloorMapCanvas } from '@/components/map/FloorMapCanvas'
 import type { MapPoint } from '@/components/map/FloorMapCanvas'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
+import { CategorySelect } from '@/components/ui/CategorySelect'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { AsyncState } from '@/components/ui/AsyncState'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { LANDMARK_COLOR } from '@/lib/constants'
-import { diffImport, parseMappinProjectFile, toDesignCoords } from '@/lib/mapImport'
+import { LANDMARK_COLOR, LANDMARK_CATEGORIES, MAP_DESIGN_W } from '@/lib/constants'
+import { parseMappinProjectFile, toDesignCoords, diffImport } from '@/lib/mapImport'
 import type { ImportPlan } from '@/lib/mapImport'
+import type { Landmark } from '@/types/domain'
 
 const PENDING_ID = '__pending__'
 
@@ -30,6 +32,7 @@ export default function LandmarkPage() {
   const { data: building } = useBuilding(buildingId)
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
+  const { data: floorplan, isLoading: floorplanLoading } = useFloorplan(floorId)
   const { data: landmarks, isLoading: landmarksLoading, isError: landmarksError, refetch: refetchLandmarks } = useLandmarks(floorId)
   const create = useCreateLandmark(floorId)
   const update = useUpdateLandmark(floorId)
@@ -40,8 +43,9 @@ export default function LandmarkPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null)
 
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const importFileInputRef = useRef<HTMLInputElement>(null)
   const [importPlan, setImportPlan] = useState<ImportPlan<Landmark> | null>(null)
+  const [importNameByUid, setImportNameByUid] = useState<Map<string, string>>(new Map())
   const [importError, setImportError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
 
@@ -62,22 +66,53 @@ export default function LandmarkPage() {
     )
   }
 
-  async function onImportFile(e: ChangeEvent<HTMLInputElement>) {
+  async function onImportFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    e.target.value = ''
+    e.target.value = '' // 같은 파일을 다시 골라도 change가 뜨도록
     if (!file) return
     setImportError(null)
     try {
       const project = await parseMappinProjectFile(file)
-      const sources = project.landmarks.map((l) => ({
-        uid: l.uid,
-        label: l.id,
-        ...toDesignCoords(l.x, l.y, project.origW),
-      }))
-      setImportPlan(diffImport(landmarks ?? [], sources))
+      const nameByUid = new Map(project.landmarks.map((l) => [l.uid, l.name]))
+      const sources = project.landmarks.map((l) => {
+        const { x, y } = toDesignCoords(l.x, l.y, project.origW)
+        return { uid: l.uid, label: l.id, x, y }
+      })
+      const plan = diffImport(landmarks ?? [], sources)
+      if (plan.toCreate.length === 0 && plan.toUpdate.length === 0 && plan.toDelete.length === 0) {
+        setImportError('변경 사항이 없습니다 — 이미 최신 상태입니다.')
+        return
+      }
+      setImportNameByUid(nameByUid)
+      setImportPlan(plan)
     } catch (err) {
       setImportError(err instanceof Error ? err.message : '가져오기에 실패했습니다.')
     }
+  }
+
+  // 지금 등록된 목적지를 mapImport.ts가 읽을 수 있는 mappinProject 형식으로 내보낸다 — 이 파일을 다시
+  // "지도 데이터 가져오기"에 넣으면 그대로 복원된다(백업 겸 다른 층/환경으로 옮기는 용도).
+  function onExport() {
+    const payload = {
+      mappinProject: true,
+      origW: MAP_DESIGN_W,
+      beacons: [],
+      landmarks: (landmarks ?? [])
+        .filter((l) => l.x != null && l.y != null)
+        .map((l) => ({
+          id: l.sourceLabel ?? l.name,
+          uid: l.sourceUid ?? l.id,
+          x: l.x as number,
+          y: l.y as number,
+          name: l.name,
+        })),
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `landmarks-${floorId}-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
   }
 
   async function confirmImport() {
@@ -86,11 +121,11 @@ export default function LandmarkPage() {
     try {
       for (const source of importPlan.toCreate) {
         await create.mutateAsync({
-          name: source.label,
-          sourceUid: source.uid,
-          sourceLabel: source.label,
+          name: importNameByUid.get(source.uid) ?? source.label,
           x: source.x,
           y: source.y,
+          sourceUid: source.uid,
+          sourceLabel: source.label,
         })
       }
       for (const { target, source } of importPlan.toUpdate) {
@@ -107,6 +142,10 @@ export default function LandmarkPage() {
       setImporting(false)
     }
   }
+
+  const categoryOptions = Array.from(
+    new Set([...LANDMARK_CATEGORIES, ...(landmarks ?? []).map((l) => l.category).filter((c): c is string => !!c)]),
+  )
 
   const points: MapPoint[] = (landmarks ?? [])
     .filter((l) => l.x != null && l.y != null)
@@ -129,10 +168,31 @@ export default function LandmarkPage() {
     { label: '목적지' },
   ]
 
+  if (floorplanLoading) return <p className="text-muted">불러오는 중…</p>
+
+  if (!floorplan) {
+    return (
+      <div>
+        <Breadcrumb items={crumbs} />
+        <h1>목적지 관리</h1>
+        <Card>
+          <p className="text-muted">설계도가 아직 없습니다. 먼저 설계도를 업로드하세요.</p>
+          <Link to={`/buildings/${buildingId}/floors/${floorId}/floorplan`} className="inline-block mt-3">
+            <Button>설계도 업로드</Button>
+          </Link>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div>
       <Breadcrumb items={crumbs} />
-      <h1>목적지(랜드마크) 관리</h1>
+      <h1>목적지 관리</h1>
+      <p className="text-muted text-[13px] -mt-3 mb-5">
+        ① 목적지 이름은 평면도 상 표기를 그대로 쓰는 것을 원칙으로 한다.
+        <br />② 제1원칙 적용이 불가능할 경우 최대한 비슷하게 유지한다.
+      </p>
 
       <div className="flex gap-6 items-start">
         <div className="flex-1 min-w-0">
@@ -155,11 +215,12 @@ export default function LandmarkPage() {
           <h3>목적지 추가</h3>
           <form onSubmit={onSubmit} className="grid gap-3">
             <Input label="이름" placeholder="406호" value={name} onChange={(e) => setName(e.target.value)} />
-            <Input
+            <CategorySelect
               label="카테고리"
               placeholder="강의실"
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={setCategory}
+              options={categoryOptions}
             />
             <Button type="submit" disabled={!valid || create.isPending}>
               목적지 추가
@@ -174,18 +235,26 @@ export default function LandmarkPage() {
       <Card className="mt-6">
         <div className="flex items-center justify-between">
           <h3>등록된 목적지</h3>
-          <div>
+          <div className="flex gap-2">
             <input
-              ref={fileInputRef}
+              ref={importFileInputRef}
               type="file"
-              accept="application/json"
+              accept="application/json,.json"
               className="hidden"
-              onChange={onImportFile}
+              onChange={onImportFileChange}
             />
             <Button
               variant="outline"
               style={{ height: 34, padding: '0 12px' }}
-              onClick={() => fileInputRef.current?.click()}
+              disabled={!landmarks || landmarks.length === 0}
+              onClick={onExport}
+            >
+              내보내기
+            </Button>
+            <Button
+              variant="outline"
+              style={{ height: 34, padding: '0 12px' }}
+              onClick={() => importFileInputRef.current?.click()}
             >
               지도 데이터 가져오기
             </Button>
@@ -245,7 +314,7 @@ export default function LandmarkPage() {
         title="지도 데이터를 가져올까요?"
         description={
           importPlan
-            ? `생성 ${importPlan.toCreate.length} · 갱신 ${importPlan.toUpdate.length} · 삭제 ${importPlan.toDelete.length} — 기존에 입력한 이름·카테고리는 유지됩니다.`
+            ? `새로 추가 ${importPlan.toCreate.length}개 · 위치 갱신 ${importPlan.toUpdate.length}개 · 삭제 ${importPlan.toDelete.length}개. 직접 추가한 목적지는 영향받지 않습니다.`
             : undefined
         }
         confirmLabel="가져오기"

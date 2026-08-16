@@ -57,4 +57,22 @@ describe('findShortestPath', () => {
     const result = findShortestPath(nodes, [], 'A', 'A', 0)
     expect(result).toEqual({ path: ['A'], distancePx: 0 })
   })
+
+  it('a directed cross edge only works a->b, not b->a (건너기 역방향 금지)', () => {
+    // A(벽 끝)에서 B(맞은편)로 건너는 건 되지만, B에는 그 자격이 없으므로 B->A로 되돌아가는 경로는
+    // (우회로가 있어도) 건너기를 못 쓰고 무조건 우회로만 타야 한다.
+    const nodes = [node('A', 0, 0), node('M', 0, 100), node('B', 5, 0)]
+    const edgesForward: PathEdge[] = [
+      { a: 'A', b: 'M', type: 'wall' },
+      { a: 'M', b: 'B', type: 'wall' },
+      { a: 'A', b: 'B', type: 'cross', directed: true },
+    ]
+    // A->B는 건너기(짧은 직선)를 탈 수 있어야 한다
+    const forward = findShortestPath(nodes, edgesForward, 'A', 'B', 0)
+    expect(forward!.path).toEqual(['A', 'B'])
+
+    // B->A는 같은 건너기 엣지를 반대로 못 타서, 훨씬 긴 우회로(M을 거침)를 타야 한다
+    const backward = findShortestPath(nodes, edgesForward, 'B', 'A', 0)
+    expect(backward!.path).toEqual(['B', 'M', 'A'])
+  })
 })

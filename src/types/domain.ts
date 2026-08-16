@@ -90,7 +90,7 @@ export interface Landmark {
   id: string
   floorId: string
   name: string // 사용자가 음성으로 말하는 목적지
-  category?: string // 자유 입력 분류(예: 강의실, 화장실) — 고정 목록 아님
+  category?: string // 분류(예: 강의실, 화장실) — LANDMARK_CATEGORIES 기본 목록 + 직접 입력
   visualTagId?: string // 시각태그 연결
   x?: number // 설계도 좌표(900 기준)
   y?: number

@@ -15,11 +15,14 @@ import { StepFooter } from '@/components/layout/StepNav'
 
 const CANVAS_W = 760
 const FILL: [number, number, number, number] = [75, 112, 229, 120] // 이동영역(반투명 파랑)
-const BARRIER_R = 4 // 벽 펜 반경(px)
+const BARRIER_R = 2 // 벽 펜 반경(px)
 const ZOOM_MIN = 1 // 기본 화면(맞춤 배율) 밑으로는 축소 못 하게
 const ZOOM_MAX = 8
 
-type Tool = 'fill' | 'drawArea' | 'wall' | 'erase' | 'scale' | 'pan'
+// 드래그 자체가 도구 동작인 건 벽 그리기·영역 그리기·지우기뿐이다 — 이것들만 배경 드래그로 그리기/
+// 선택을 하고, 나머지(채우기·축척·도구 미선택)는 다른 화면들처럼 배경을 드래그하면 바로 화면 이동이 된다.
+type Tool = 'fill' | 'drawArea' | 'wall' | 'erase' | 'scale' | 'pan' | null
+const PAN_DRAG_THRESHOLD_PX = 4 // 이 정도는 움직여야 '클릭'이 아니라 '드래그(이동)'로 간주
 
 export default function MapReviewPage() {
   const { buildingId = '', floorId = '' } = useParams()
@@ -50,7 +53,11 @@ export default function MapReviewPage() {
   const panDragRef = useRef<{ startClientX: number; startClientY: number; startPanX: number; startPanY: number } | null>(
     null,
   )
+  // 채우기/축척/도구 미선택 상태에서 배경을 눌렀다가 임계값 이상 움직이면 이동으로 처리했다는 표시 —
+  // 뒤이어 뜨는 클릭 이벤트에서 채우기·축척 지점 찍기를 건너뛰기 위해 필요하다.
+  const dragMovedRef = useRef(false)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
+  const [spaceHeld, setSpaceHeld] = useState(false)
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
   const [tool, setTool] = useState<Tool>('fill')
   const [threshold, setThreshold] = useState(240) // 이보다 어두운 픽셀 = 벽(경계)
@@ -405,13 +412,45 @@ export default function MapReviewPage() {
     setPan({ x: pointer.x - pointTo.x * clamped, y: pointer.y - pointTo.y * clamped })
   }
 
-  // 휠로 확대·축소(다른 지도 화면들과 동일하게 Ctrl 없이 바로 동작, 컨테이너는 고정한 채 설계도만 확대) —
+  // 스페이스바를 누르고 있는 동안은 어떤 도구를 쓰고 있어도 임시로 화면 이동 모드가 된다
+  // (Figma/Photoshop과 동일한 관례) — 도구를 바꾸지 않고도 마우스로 바로 이동할 수 있게.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.code !== 'Space') return
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      // 키를 누르고 있으면 브라우저가 keydown을 반복 발생시키는데(e.repeat), 그 반복 이벤트까지
+      // 매번 preventDefault 해야 스페이스 기본 동작(페이지 스크롤)이 안 새어나간다 — 처음 한 번만
+      // 막으면 계속 누르고 있는 동안 스크롤이 내려간다.
+      e.preventDefault()
+      if (!e.repeat) setSpaceHeld(true)
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === 'Space') setSpaceHeld(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [])
+
+  const panActive = tool === 'pan' || spaceHeld
+
+  // 대부분 마우스로 쓰니 휠은 그냥(별도 키 없이) 확대·축소가 기본 — 마우스 휠은 deltaY만 있어서
+  // Ctrl 없이 스크롤/핀치를 구분할 방법이 없다. 트랙패드 두 손가락 스크롤은 Ctrl을 누른 채로 하면
+  // 화면 이동(브라우저가 Ctrl+휠로 보고하는 트랙패드 핀치도 같이 이동으로 처리됨).
   // React 합성 wheel 이벤트는 기본적으로 passive라 preventDefault가 안 먹어서 네이티브로 붙인다.
   useEffect(() => {
     const el = stageRef.current
     if (!el) return
     function handleWheel(e: WheelEvent) {
       e.preventDefault()
+      if (e.ctrlKey) {
+        setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }))
+        return
+      }
       const rect = el!.getBoundingClientRect()
       const pointer = { x: e.clientX - rect.left, y: e.clientY - rect.top }
       zoomAt(pointer, zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15))
@@ -442,6 +481,14 @@ export default function MapReviewPage() {
   }
 
   function onMouseDown(e: ReactMouseEvent<HTMLCanvasElement>) {
+    // 스페이스바를 누르고 있거나(임시 이동 모드), 마우스 휠(가운데) 버튼으로 누르면 도구와 상관없이
+    // 바로 화면 이동을 시작한다 — 매번 '화면 이동' 도구로 바꿀 필요 없게.
+    if (panActive || e.button === 1) {
+      e.preventDefault()
+      panDragRef.current = { startClientX: e.clientX, startClientY: e.clientY, startPanX: pan.x, startPanY: pan.y }
+      dragMovedRef.current = false
+      return
+    }
     if (tool === 'wall') {
       drawingRef.current = true
       pushHistory()
@@ -458,14 +505,21 @@ export default function MapReviewPage() {
       redraw()
       return
     }
-    if (tool === 'pan') {
-      panDragRef.current = { startClientX: e.clientX, startClientY: e.clientY, startPanX: pan.x, startPanY: pan.y }
-    }
+    // 채우기·축척·도구 미선택 상태: 드래그 자체를 쓰는 도구가 아니라서, 다른 화면들처럼 배경을
+    // 드래그하면 화면 이동으로 처리될 수 있게 일단 잡아둔다 — 실제 이동 여부는 onMouseMove에서
+    // 임계값 이상 움직였는지 보고 정한다(살짝 흔들린 클릭까지 이동으로 잡히지 않도록).
+    panDragRef.current = { startClientX: e.clientX, startClientY: e.clientY, startPanX: pan.x, startPanY: pan.y }
+    dragMovedRef.current = false
   }
   function onMouseMove(e: ReactMouseEvent<HTMLCanvasElement>) {
-    if (tool === 'pan' && panDragRef.current) {
+    if (panDragRef.current) {
       const { startClientX, startClientY, startPanX, startPanY } = panDragRef.current
-      setPan({ x: startPanX + (e.clientX - startClientX), y: startPanY + (e.clientY - startClientY) })
+      const dx = e.clientX - startClientX
+      const dy = e.clientY - startClientY
+      if (panActive || Math.hypot(dx, dy) > PAN_DRAG_THRESHOLD_PX) {
+        dragMovedRef.current = true
+        setPan({ x: startPanX + dx, y: startPanY + dy })
+      }
       return
     }
     if (tool === 'wall' && drawingRef.current) {
@@ -487,7 +541,7 @@ export default function MapReviewPage() {
     }
   }
   function onMouseUp() {
-    if (tool === 'pan') {
+    if (panDragRef.current) {
       panDragRef.current = null
       return
     }
@@ -514,7 +568,13 @@ export default function MapReviewPage() {
     }
   }
   function onCanvasClick(e: ReactMouseEvent<HTMLCanvasElement>) {
-    if (tool === 'wall' || tool === 'drawArea' || tool === 'erase' || tool === 'pan') return // 드래그로 처리
+    // 배경을 눌렀다가 임계값 이상 움직여서 이미 화면 이동으로 처리된 제스처면, 뒤이어 뜨는 클릭에서
+    // 채우기·축척 지점 찍기를 하지 않는다(이동 끝난 자리에 엉뚱하게 찍히는 것 방지).
+    if (dragMovedRef.current) {
+      dragMovedRef.current = false
+      return
+    }
+    if (panActive || tool === 'wall' || tool === 'drawArea' || tool === 'erase') return // 드래그로 처리
     const { x, y } = getXY(e)
     if (tool === 'scale') {
       const pts = scalePointsRef.current
@@ -533,7 +593,7 @@ export default function MapReviewPage() {
       }
       return
     }
-    flood(x, y, tool === 'fill')
+    if (tool === 'fill') flood(x, y, true) // 도구 미선택(null) 상태에선 클릭해도 아무 동작 없음
   }
 
   function confirmScale() {
@@ -655,7 +715,7 @@ export default function MapReviewPage() {
 
   const toolBtn = (mode: Tool, label: string) => (
     <button
-      onClick={() => selectTool(mode)}
+      onClick={() => selectTool(tool === mode ? null : mode)}
       className={`h-11 rounded-lg text-sm font-medium border ${
         tool === mode ? 'bg-brand text-white border-transparent' : 'bg-white text-body border-line'
       }`}
@@ -674,7 +734,7 @@ export default function MapReviewPage() {
             ref={stageRef}
             className="relative w-full border border-line rounded-lg bg-white overflow-hidden"
             style={{
-              cursor: tool === 'pan' ? 'grab' : 'crosshair',
+              cursor: panActive || tool === null ? 'grab' : 'crosshair',
               height: dims ? dims.h * fitScale : undefined,
             }}
           >
@@ -723,7 +783,10 @@ export default function MapReviewPage() {
           </div>
           <p className="mt-2 text-[13px] text-muted">
             영역을 <strong>클릭</strong>하면 통행 영역이 채워집니다. 출입구처럼 벽이 뚫려 밖으로 샐 때는{' '}
-            <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요. 마우스 휠로 확대할 수 있어요.
+            <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요. 지도 위에서 <strong>휠</strong>로 바로
+            확대·축소할 수 있고, <strong>Ctrl+휠</strong>(트랙패드는 Ctrl+두 손가락)로 화면을 이동할 수
+            있어요 — <strong>스페이스바</strong>를 누른 채 드래그하거나 마우스{' '}
+            <strong>가운데 버튼</strong>으로 드래그해도 어떤 도구를 쓰던 중이든 바로 이동됩니다.
           </p>
         </div>
 
@@ -770,7 +833,8 @@ export default function MapReviewPage() {
               className="w-full"
             />
             <span className="block text-[12px] text-muted mt-1">
-              밖으로 새면 ↑ 올리고, 방 안에서 안 퍼지면 ↓ 내리세요.
+              밖으로 새면 ↑ 올리고,
+              <br />방 안에서 안 퍼지면 ↓ 내리세요.
             </span>
           </div>
 

@@ -265,7 +265,12 @@ export const handlers = [
   }),
 
   http.delete(`${base}/floors/:floorId/floorplan`, ({ params }) => {
-    delete db.floorplans[params.floorId as string]
+    const floorId = params.floorId as string
+    delete db.floorplans[floorId]
+    // 설계도를 새로 올리면 이전 이미지 기준으로 그렸던 통행영역·축척은 더 이상 맞지 않으니 같이 지운다 —
+    // 안 그러면 "다시 업로드" 후 지도 검수에 옛 설계도 기준 마스크가 새 이미지 위에 겹쳐 뜬다.
+    delete db.masks[floorId]
+    delete db.scales[floorId]
     return new HttpResponse(null, { status: 204 })
   }),
 

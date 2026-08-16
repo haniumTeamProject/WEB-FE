@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
+import { useFloorplan } from '@/features/floorplan/hooks'
 import {
   useConnectors,
   useSetConnectorPosition,
@@ -24,6 +25,7 @@ export default function ConnectorPlacementPage() {
   const { data: building } = useBuilding(buildingId)
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
+  const { data: floorplan, isLoading: floorplanLoading } = useFloorplan(floorId)
   const { data: connectors, isLoading, isError, refetch } = useConnectors(buildingId)
   const setPosition = useSetConnectorPosition(buildingId)
   const clearPosition = useClearConnectorPosition(buildingId)
@@ -52,6 +54,23 @@ export default function ConnectorPlacementPage() {
     { label: floor ? `${floor.floor}층` : '층', to: `/buildings/${buildingId}/floors` },
     { label: '수직연결자' },
   ]
+
+  if (floorplanLoading) return <p className="text-muted">불러오는 중…</p>
+
+  if (!floorplan) {
+    return (
+      <div>
+        <Breadcrumb items={crumbs} />
+        <h1>수직연결자 배치</h1>
+        <Card>
+          <p className="text-muted">설계도가 아직 없습니다. 먼저 설계도를 업로드하세요.</p>
+          <Link to={`/buildings/${buildingId}/floors/${floorId}/floorplan`} className="inline-block mt-3">
+            <Button>설계도 업로드</Button>
+          </Link>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div>

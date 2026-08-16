@@ -17,8 +17,20 @@ export const BEACON_TYPE_COLOR: Record<BeaconType, string> = {
   reinforcement: '#29AD72',
 }
 
-// 랜드마크(목적지) 지도 점 색 — 카테고리가 자유 입력이라 고정 색 하나만 씀
+// 랜드마크(목적지) 지도 점 색 — 카테고리별로 나누지 않고 고정 색 하나만 씀
 export const LANDMARK_COLOR = '#4B70E5'
+
+// 목적지 카테고리 기본 목록 — 드롭다운 기본 옵션, 목록에 없으면 폼에서 직접 입력 가능
+export const LANDMARK_CATEGORIES = [
+  '강의실',
+  '사무실',
+  '화장실',
+  '회의실',
+  '실습실',
+  '라운지',
+  '매점/카페',
+  '기타',
+] as const
 
 // 수직연결자 지도 점 색 — PathNodePage의 연결자 입구 색(ENTRANCE_COLOR.connector)과 동일하게 맞춤
 export const CONNECTOR_COLOR = '#2563eb'

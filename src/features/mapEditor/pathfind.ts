@@ -26,7 +26,9 @@ export function findShortestPath(
     const dist = Math.hypot(a.x - b.x, a.y - b.y)
     const weight = e.type === 'cross' ? dist + crossPenaltyPx : dist
     adjacency.get(a.id)?.push({ to: b.id, weight })
-    adjacency.get(b.id)?.push({ to: a.id, weight })
+    // directed 엣지(건너기)는 a->b로만 — 벽 끝/입구(a)에서 출발하는 것만 안전하다는 전제라, 반대
+    // 방향(b->a)까지 열어두면 b가 그 자격을 안 갖췄어도 건너기를 타고 되돌아갈 수 있게 된다.
+    if (!e.directed) adjacency.get(b.id)?.push({ to: a.id, weight })
   }
   if (!adjacency.has(startId) || !adjacency.has(endId)) return null
 
