@@ -82,6 +82,56 @@ describe('generatePathNodes entrance facing (상하좌우 4방향)', () => {
     const landmarkNodes = nodes.filter((n) => n.type === 'landmark')
     expect(landmarkNodes.length).toBe(2)
   })
+
+  it('keeps both up and down facing points for a destination sitting inside a narrow corridor (does not merge them into one)', () => {
+    // 실제 사례: 목적지가 좁은 복도(폭이 MERGE_RADIUS_PX(6px)보다 살짝 큰 정도) 안에 위치하면, 위쪽
+    // 벽까지의 맞은편 지점과 아래쪽 벽까지의 맞은편 지점이 서로 6px 이내로 가까워진다. 이 둘은 서로
+    // 다른 벽이라 절대 같은 지점일 수 없는데도, 예전 코드는 거리만 보고 하나로 합쳐버려서 위/아래 중
+    // 한쪽 건너기 화살표가 통째로 사라지는 버그가 있었다.
+    const W = 120
+    const H = 24
+    const mask = new Uint8Array(W * H)
+    for (let y = 10; y < 14; y++) for (let x = 0; x < W; x++) mask[y * W + x] = 1
+
+    const entrance = { x: 60, y: 11, kind: 'landmark' as const }
+    const { nodes, edges } = generatePathNodes(mask, W, H, [entrance])
+
+    const facings = nodes.filter((n) => n.type === 'facing' && n.pairKind === 'landmark')
+    expect(facings.some((f) => f.x === 60 && f.y < 11)).toBe(true) // 위쪽 벽 맞은편
+    expect(facings.some((f) => f.x === 60 && f.y > 11)).toBe(true) // 아래쪽 벽 맞은편
+
+    const verticalCrossEdges = edges.filter((e) => {
+      if (e.type !== 'cross') return false
+      const byId = new Map(nodes.map((n) => [n.id, n]))
+      const a = byId.get(e.a)!
+      const b = byId.get(e.b)!
+      return a.x === b.x && a.x === 60
+    })
+    expect(verticalCrossEdges.length).toBe(2) // 위/아래 각각 하나씩, 총 2개
+  })
+
+  it('skips the redundant left/right crossings when an entrance sits along a straight narrow corridor (does not hug the same wall it is on)', () => {
+    // 실제 사례: 입구가 일직선 복도 위에 있으면, 위/아래(복도 폭을 가로지르는 진짜 횡단)뿐 아니라
+    // 좌/우(복도를 따라 쭉 나가는 방향, 벽을 타면 바로 닿는 곳)까지 전부 유효한 후보로 잡히면서 같은
+    // 일직선 벽에 불필요하게 여러 방향의 화살표가 생기는 문제가 있었다. 코너처럼 입구에도 허깅 필터를
+    // 적용해서 좌/우는 걸러내고, 위/아래(서로 다른 벽이라 하나로 합쳐지지 않음)만 남겨야 한다.
+    const W = 200
+    const H = 30
+    const mask = new Uint8Array(W * H)
+    for (let y = 10; y < 20; y++) for (let x = 0; x < W; x++) mask[y * W + x] = 1
+
+    const entrance = { x: 100, y: 15, kind: 'landmark' as const }
+    const { nodes, edges } = generatePathNodes(mask, W, H, [entrance])
+    const byId = new Map(nodes.map((n) => [n.id, n]))
+    const landmark = nodes.find((n) => n.type === 'landmark')!
+    const crossFromEntrance = edges.filter((e) => e.type === 'cross' && (e.a === landmark.id || e.b === landmark.id))
+
+    expect(crossFromEntrance.length).toBe(2)
+    for (const e of crossFromEntrance) {
+      const other = byId.get(e.a === landmark.id ? e.b : e.a)!
+      expect(other.x).toBe(landmark.x) // 좌우(길이 방향)는 없어야 하고, 위/아래(폭 방향)만 남아야 함
+    }
+  })
 })
 
 describe('generatePathNodes corner crossing', () => {
@@ -200,9 +250,12 @@ describe('generatePathNodes corner crossing', () => {
     }
   })
 
-  it('skips a corner-crossing direction that just hugs an immediately adjacent wall (side clearance too small)', () => {
-    // 같은 L턴 코너(10,50): 아래로 9px짜리 진짜 복도 폭 횡단은 남아야 하고, 그 옆(위/아래로 벽이 바로
-    // 붙어있는) 방향으로 복도를 따라 쭉 나가는(오른쪽) 건 벽을 타면 바로 닿는 곳이라 없어야 한다.
+  it('keeps every crossing direction whose length is similar to the shortest, drops only the much-longer wall-hugging one', () => {
+    // 같은 L턴 코너(10,50)에서는 아래로 9px(세로 복도 폭), 왼쪽으로 10px(가로 복도 폭), 오른쪽으로는
+    // 복도를 따라 쭉 나가는(벽을 타면 바로 닿는, 훨씬 긴) 방향까지 여러 후보가 동시에 유효하다.
+    // 9px와 10px는 서로 비슷한 길이(SIMILAR_LENGTH_RATIO=1.5배 이내)라 둘 다 남아야 한다 — 가장
+    // 짧은 것 하나만 남기면 실제로 둘 다 필요한 경우까지 하나가 사라진다(실제 발견된 문제). 반대로
+    // 오른쪽(복도를 따라 쭉 나가는, 벽을 타면 바로 닿는 곳)은 없어야 한다.
     const W = 80
     const H = 80
     const mask = new Uint8Array(W * H)
@@ -218,17 +271,92 @@ describe('generatePathNodes corner crossing', () => {
     expect(corner).toBeTruthy()
 
     const crossFromCorner = edges.filter((e) => e.type === 'cross' && (e.a === corner!.id || e.b === corner!.id))
-    const hasNarrowDownCrossing = crossFromCorner.some((e) => {
-      const other = byId.get(e.a === corner!.id ? e.b : e.a)!
-      return other.x === corner!.x && other.y > corner!.y
-    })
-    expect(hasNarrowDownCrossing).toBe(true)
+    expect(crossFromCorner.length).toBe(2)
+    const others = crossFromCorner.map((e) => byId.get(e.a === corner!.id ? e.b : e.a)!)
+    expect(others.some((o) => o.x === corner!.x && o.y > corner!.y)).toBe(true) // 아래(9px)
+    expect(others.some((o) => o.y === corner!.y && o.x < corner!.x)).toBe(true) // 왼쪽(10px)
+    expect(others.some((o) => o.y === corner!.y && o.x > corner!.x)).toBe(false) // 오른쪽(허깅, 없어야 함)
+  })
 
-    const hasWallHuggingSidewaysCrossing = crossFromCorner.some((e) => {
-      const other = byId.get(e.a === corner!.id ? e.b : e.a)!
-      return other.y === corner!.y && other.x !== corner!.x
+  it('does not treat an entire narrow connecting corridor as a single crossing (side clearance narrows only after the corner, not at it)', () => {
+    // 실제 사례: 넓은 두 홀을 잇는 좁은 복도(폭 10, 길이 80)의 양 끝 코너에서, 코너 지점 자체는 아직
+    // 넓은 홀 경계라 옆 여유가 충분해 보이지만 한 걸음만 복도 쪽으로 들어가면 바로 좁아진다. 코너
+    // 지점만 검사하던 예전 코드는 이걸 못 걸러내서 복도 전체 길이(80px)를 "횡단"으로 잘못 안내했다.
+    const W = 100
+    const H = 100
+    const mask = new Uint8Array(W * H)
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[y * W + x] = 1
+    }
+    rect(0, 0, 100, 10) // 위쪽 홀
+    rect(0, 90, 100, 100) // 아래쪽 홀
+    rect(40, 10, 50, 90) // 둘을 잇는 좁은 복도(폭 10, 길이 80)
+
+    const { nodes, edges } = generatePathNodes(mask, W, H, [])
+    const byId = new Map(nodes.map((n) => [n.id, n]))
+    const crossEdges = edges.filter((e) => e.type === 'cross')
+    // 복도 길이(80px)에 가까운 긴 세로 건너기가 있으면 안 된다 — 있다면 복도를 통째로 "건너기"로
+    // 잘못 안내하는 것이다. 양 끝 홀 진입부의 짧은(10px 안팎) 가로 건너기만 남아야 한다.
+    const hasCorridorLengthCrossing = crossEdges.some((e) => {
+      const a = byId.get(e.a)!
+      const b = byId.get(e.b)!
+      return a.x === b.x && Math.hypot(a.x - b.x, a.y - b.y) > 30
     })
-    expect(hasWallHuggingSidewaysCrossing).toBe(false)
+    expect(hasCorridorLengthCrossing).toBe(false)
+  })
+
+  it('does not let a crossing that only briefly grazes a short pillar get filtered out entirely (only a truly hugged wall should be filtered)', () => {
+    // 실제 사례: 코너에서 가장 가까운(=선택될) 방향의 경로 중간에 짧은 기둥이 살짝 튀어나와 있어 그
+    // 지점 한 곳만 순간적으로 옆 여유가 좁아진다. 경로 위 단 한 지점이라도 좁으면 무조건 걸러내던
+    // 버전은 이런 정상적인 횡단까지 통째로 없애버렸다 — 경로 전체에서 "계속" 같은 벽을 타고 걸을 수
+    // 있는 경우에만 걸러야 한다. 같은 L턴 코너(10,50)의 가장 가까운 방향(아래, 9px)에 1px짜리 기둥
+    // 하나만 살짝 걸쳐 놓는다(9칸 중 1칸=11%, 85% 문턱에는 한참 못 미침).
+    const W = 80
+    const H = 80
+    const mask = new Uint8Array(W * H)
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[y * W + x] = 1
+    }
+    rect(0, 0, 10, 60)
+    rect(0, 50, 60, 60)
+    // 세로 복도 오른쪽 벽(x=9)에서 아주 살짝 튀어나온 기둥 — (10,55) 한 지점만 스친다.
+    mask[55 * W + 9] = 0
+
+    const { nodes, edges } = generatePathNodes(mask, W, H, [])
+    const byId = new Map(nodes.map((n) => [n.id, n]))
+    const corner = nodes.find((n) => n.type === 'corner' && n.x === 10 && n.y === 50)
+    expect(corner).toBeTruthy()
+    const crossFromCorner = edges.filter((e) => e.type === 'cross' && (e.a === corner!.id || e.b === corner!.id))
+    const others = crossFromCorner.map((e) => byId.get(e.a === corner!.id ? e.b : e.a)!)
+    expect(others.some((o) => o.x === corner!.x && o.y > corner!.y)).toBe(true) // 아래(9px, 기둥이 스치는 방향)
+  })
+
+  it('clears pairKind on a facing point that turns out to also be a corner facing point (should render purple, not the entrance color)', () => {
+    // 실제 사례: 입구가 쏜 맞은편 지점이, 우연히 어떤 concave 코너가 쏜 맞은편 지점과 같은 위치(축까지
+    // 일치)에 겹칠 수 있다. 이 지점은 이제 "코너의 맞은편"이기도 하므로 특정 입구 하나의 색(pairKind)
+    // 으로 칠하면 안 된다 — pairKind가 지워져서 코너 맞은편처럼(화면에서는 보라색으로) 표시돼야 한다.
+    const W = 100
+    const H = 100
+    const mask = new Uint8Array(W * H)
+    const rect = (x0: number, y0: number, x1: number, y1: number, val: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[y * W + x] = val
+    }
+    rect(0, 0, 100, 100, 1)
+    rect(30, 0, 40, 4, 0) // 위쪽 벽에서 살짝 파낸 노치 — concave 코너 2개를 만든다
+
+    const entrance = { x: 30, y: 90, kind: 'landmark' as const }
+    const { nodes, edges } = generatePathNodes(mask, W, H, [entrance])
+    const byId = new Map(nodes.map((n) => [n.id, n]))
+
+    const sharedFacing = nodes.find((n) => {
+      if (n.type !== 'facing') return false
+      const connectedTypes = edges
+        .filter((e) => e.type === 'cross' && (e.a === n.id || e.b === n.id))
+        .map((e) => byId.get(e.a === n.id ? e.b : e.a)!.type)
+      return connectedTypes.includes('corner') && connectedTypes.includes('landmark')
+    })
+    expect(sharedFacing).toBeTruthy()
+    expect(sharedFacing!.pairKind).toBeUndefined()
   })
 
   it('marks cross edges as directed (one-way), and wall edges as not', () => {
@@ -247,5 +375,45 @@ describe('generatePathNodes corner crossing', () => {
     expect(crossEdges.length).toBeGreaterThan(0)
     expect(crossEdges.every((e) => e.directed === true)).toBe(true)
     expect(wallEdges.every((e) => !e.directed)).toBe(true)
+  })
+})
+
+describe('generatePathNodes wall boundary tracing', () => {
+  it('does not splice a destination deep inside a room into the wall boundary trace as if it sat on the wall (would draw a diagonal wall line through the room)', () => {
+    // 실제 사례: 목적지가 방 안쪽 깊숙이 찍혀 있으면, 정렬 순서(segmentIndex/t로 벽 경계선에 투영한
+    // 위치) 기준으로 마치 경계 위에 있는 것처럼 벽선 트레이싱 순서에 그대로 끼어들었다. 그 결과
+    // 목적지의 실제 좌표(투영 위치가 아니라 원래 찍힌 위치)와 이웃 경계점 사이를 잇는 '벽' 엣지가
+    // 방을 대각선으로 가로지르며 그려지는 버그가 있었다. 경계에서 먼 점은 메인 벽 루프에서 빼고,
+    // 가장 가까운 경계점 하나에만 짧게 연결해야 한다(그 연결선 자체는 대각선이어도 괜찮다 —
+    // 열린 방 안을 가로지르는 것뿐이라 안내상 문제없다. 문제는 그게 두 '경계' 점 사이에 끼어드는 것).
+    const W = 200
+    const H = 100
+    const mask = new Uint8Array(W * H)
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[y * W + x] = 1
+    }
+    rect(10, 10, 190, 90) // 큰 방 하나
+
+    // 왼쪽 위 코너(10,10)와 정렬 순서상 가까운 위치로 투영되지만, 실제 좌표는 방 안쪽 깊숙한(180,20)
+    const entrance = { x: 180, y: 20, kind: 'landmark' as const }
+    const { nodes, edges } = generatePathNodes(mask, W, H, [entrance])
+    const byId = new Map(nodes.map((n) => [n.id, n]))
+
+    // 경계(코너·맞은편) 점들끼리 잇는 '벽' 엣지는 항상 거의 축에 맞아야 한다(rectilinear 마스크이므로).
+    // 목적지 자신의 단일 연결선(목적지↔가장 가까운 경계점)은 대각선이어도 정상이라 이 검사에서 뺀다.
+    const boundaryWallEdges = edges.filter((e) => {
+      if (e.type !== 'wall') return false
+      const a = byId.get(e.a)!
+      const b = byId.get(e.b)!
+      return a.type !== 'landmark' && a.type !== 'connector' && b.type !== 'landmark' && b.type !== 'connector'
+    })
+    expect(boundaryWallEdges.length).toBeGreaterThan(0)
+    for (const e of boundaryWallEdges) {
+      const a = byId.get(e.a)!
+      const b = byId.get(e.b)!
+      const dx = Math.abs(a.x - b.x)
+      const dy = Math.abs(a.y - b.y)
+      expect(Math.min(dx, dy)).toBeLessThanOrEqual(3)
+    }
   })
 })
