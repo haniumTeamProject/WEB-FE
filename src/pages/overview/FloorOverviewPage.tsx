@@ -12,13 +12,16 @@ import { useConnectors } from '@/features/connectors/hooks'
 import { readStoredPathNodes } from '@/features/mapEditor/pathNodesStorage'
 import { pathNodeColor } from '@/features/mapEditor/pathNodeColors'
 import { arrowheadPoints } from '@/lib/canvasArrows'
-import { BEACON_TYPE_COLOR, BEACON_TYPE_LABEL, CONNECTOR_COLOR, LANDMARK_COLOR, MAP_DESIGN_W as DESIGN_W } from '@/lib/constants'
+import { BEACON_TYPE_COLOR, BEACON_TYPE_LABEL, CONNECTOR_COLOR, MAP_DESIGN_W as DESIGN_W } from '@/lib/constants'
 import { Toggle } from '@/components/ui/Toggle'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 6
+// 목적지 관리 화면(LandmarkPage)의 LANDMARK_COLOR(파랑)은 의미비콘과 같은 색이라 이 화면에서는 서로
+// 겹쳐 구분이 안 된다 — 경로노드 페이지에서 "목적지 출입구"에 쓰는 주황색으로 이 화면에서만 맞춘다.
+const OVERVIEW_LANDMARK_COLOR = '#f2992e'
 
 // 준성님 요청: 비콘·랜드마크·경로노드·설계도를 한 화면에서 같이 확인할 수 있는 층별 마지막 종합 확인
 // 화면. 편집은 안 하고 보기 전용이라, 각 데이터를 켜고 끌 수 있는 토글만 둔다.
@@ -128,7 +131,7 @@ export default function FloorOverviewPage() {
           <Toggle checked={showBeacons} onChange={setShowBeacons} />
         </label>
         <label className="flex items-center gap-2.5">
-          <span className="text-[13px]" style={{ color: LANDMARK_COLOR }}>
+          <span className="text-[13px]" style={{ color: OVERVIEW_LANDMARK_COLOR }}>
             ● 목적지
           </span>
           <Toggle checked={showLandmarks} onChange={setShowLandmarks} />
@@ -235,7 +238,7 @@ export default function FloorOverviewPage() {
                       x={(l.x as number) * scale}
                       y={(l.y as number) * scale}
                       radius={6 / zoom}
-                      fill={LANDMARK_COLOR}
+                      fill={OVERVIEW_LANDMARK_COLOR}
                       stroke="#fff"
                       strokeWidth={1.4 / zoom}
                     />
@@ -245,14 +248,15 @@ export default function FloorOverviewPage() {
                   .filter((b) => b.x != null && b.y != null)
                   .map((b) => (
                     // 다른 노드(코너·목적지·연결자)와 전부 원 모양이라 겹치면 구분이 안 돼서, 비콘만
-                    // 마름모(정사각형을 45도 회전)로 다르게 그린다.
+                    // 마름모로 다르게 그린다. Konva RegularPolygon은 sides=4일 때 이미 꼭짓점이
+                    // 위쪽을 향해(마름모 모양으로) 그려지므로, 여기에 45도를 더 돌리면 오히려
+                    // 각진 정사각형이 되어버린다(실제 발견된 문제) — 회전 없이 그대로 둬야 마름모다.
                     <RegularPolygon
                       key={b.id}
                       x={(b.x as number) * scale}
                       y={(b.y as number) * scale}
                       sides={4}
                       radius={6.5 / zoom}
-                      rotation={45}
                       fill={BEACON_TYPE_COLOR[b.type]}
                       stroke="#fff"
                       strokeWidth={1.2 / zoom}
@@ -270,7 +274,7 @@ export default function FloorOverviewPage() {
       <div className="flex flex-wrap gap-4 mt-3 text-[12px] text-muted">
         <span style={{ color: BEACON_TYPE_COLOR.semantic }}>◆ {BEACON_TYPE_LABEL.semantic}</span>
         <span style={{ color: BEACON_TYPE_COLOR.reinforcement }}>◆ {BEACON_TYPE_LABEL.reinforcement}</span>
-        <span style={{ color: LANDMARK_COLOR }}>● 목적지</span>
+        <span style={{ color: OVERVIEW_LANDMARK_COLOR }}>● 목적지</span>
         <span style={{ color: CONNECTOR_COLOR }}>● 연결자 입구</span>
         <span style={{ color: '#7c3aed' }}>─ 경로노드 벽선</span>
         <span style={{ color: '#16a34a' }}>┄ 경로노드 건너기</span>

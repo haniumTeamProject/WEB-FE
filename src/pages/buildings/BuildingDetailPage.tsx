@@ -46,49 +46,46 @@ export default function BuildingDetailPage() {
         {floorsError && <AsyncState status="error" onRetry={() => refetchFloors()} />}
         <div style={{ display: 'grid', gap: 8 }}>
           {!floorsLoading && !floorsError && floors?.map((f) => (
-            <div
-              key={f.id}
-              className="flex items-center justify-between p-3 border border-line rounded-lg"
-            >
+            <div key={f.id} className="p-3 border border-line rounded-lg">
               <div className="flex items-center gap-3">
-                <span className="font-medium">
+                <span className="font-medium whitespace-nowrap">
                   {f.floor}층 · major {f.major}
                 </span>
                 {f.status && <StatusBadge status={f.status} />}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 mt-2.5">
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/floorplan`}>
-                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                  <Button variant="outline" className="whitespace-nowrap" style={{ height: 34, padding: '0 12px' }}>
                     설계도
                   </Button>
                 </Link>
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/map`}>
-                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                  <Button variant="outline" className="whitespace-nowrap" style={{ height: 34, padding: '0 12px' }}>
                     지도 검수
                   </Button>
                 </Link>
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/connectors`}>
-                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                  <Button variant="outline" className="whitespace-nowrap" style={{ height: 34, padding: '0 12px' }}>
                     수직연결자
                   </Button>
                 </Link>
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/landmarks`}>
-                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                  <Button variant="outline" className="whitespace-nowrap" style={{ height: 34, padding: '0 12px' }}>
                     목적지
                   </Button>
                 </Link>
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/beacons`}>
-                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                  <Button variant="outline" className="whitespace-nowrap" style={{ height: 34, padding: '0 12px' }}>
                     비콘
                   </Button>
                 </Link>
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/path-nodes`}>
-                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                  <Button variant="outline" className="whitespace-nowrap" style={{ height: 34, padding: '0 12px' }}>
                     경로노드
                   </Button>
                 </Link>
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/overview`}>
-                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                  <Button variant="outline" className="whitespace-nowrap" style={{ height: 34, padding: '0 12px' }}>
                     종합 확인
                   </Button>
                 </Link>
