@@ -16,6 +16,8 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Toggle } from '@/components/ui/Toggle'
 import { Button } from '@/components/ui/Button'
+import { Pagination } from '@/components/ui/Pagination'
+import { usePagination } from '@/lib/usePagination'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { AsyncState } from '@/components/ui/AsyncState'
@@ -40,6 +42,9 @@ export default function BeaconListPage() {
   const create = useCreateBeacon(floorId)
   const update = useUpdateBeacon(floorId)
   const del = useDeleteBeacon(floorId)
+
+  // 목록은 10개씩 나눠 보여준다. 삭제로 마지막 페이지가 비면 usePagination이 보정한다.
+  const beaconPage = usePagination(beacons ?? [], 10)
 
   const [name, setName] = useState('')
   const [mac, setMac] = useState('')
@@ -379,7 +384,7 @@ export default function BeaconListPage() {
         {beaconsLoading && <AsyncState status="loading" />}
         {beaconsError && <AsyncState status="error" onRetry={() => refetchBeacons()} />}
         <div className="grid gap-2 mt-3">
-          {!beaconsLoading && !beaconsError && beacons?.map((b) => (
+          {!beaconsLoading && !beaconsError && beaconPage.pageItems.map((b) => (
             <div key={b.id} className="flex items-center justify-between p-3 border border-line rounded-lg">
               <div className="flex items-center gap-3">
                 <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: TYPE_COLOR[b.type] }} />
@@ -411,6 +416,9 @@ export default function BeaconListPage() {
           ))}
           {beacons && beacons.length === 0 && <AsyncState status="empty" title="등록된 비콘이 없습니다." />}
         </div>
+        {!beaconsLoading && !beaconsError && (
+          <Pagination page={beaconPage.page} pageCount={beaconPage.pageCount} onChange={beaconPage.setPage} />
+        )}
       </Card>
 
       <StepFooter buildingId={buildingId} floorId={floorId} current="beacons" />

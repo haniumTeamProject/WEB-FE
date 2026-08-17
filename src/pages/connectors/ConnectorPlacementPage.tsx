@@ -13,6 +13,8 @@ import { FloorMapCanvas } from '@/components/map/FloorMapCanvas'
 import type { MapPoint } from '@/components/map/FloorMapCanvas'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { Pagination } from '@/components/ui/Pagination'
+import { usePagination } from '@/lib/usePagination'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { AsyncState } from '@/components/ui/AsyncState'
@@ -33,6 +35,9 @@ export default function ConnectorPlacementPage() {
   const [armedId, setArmedId] = useState<string | null>(null)
 
   const relevant = (connectors ?? []).filter((c) => floor && c.floors.includes(floor.floor))
+
+  // 사이드바 목록이라 5개씩 나눠 보여준다.
+  const connectorPage = usePagination(relevant, 5)
 
   const points: MapPoint[] = relevant
     .map((c) => {
@@ -100,7 +105,7 @@ export default function ConnectorPlacementPage() {
           {isLoading && <AsyncState status="loading" />}
           {isError && <AsyncState status="error" onRetry={() => refetch()} />}
           <div className="grid gap-2 mt-3">
-            {!isLoading && !isError && relevant.map((c) => {
+            {!isLoading && !isError && connectorPage.pageItems.map((c) => {
               const placed = c.positions?.find((p) => p.floorId === floorId)
               const armed = armedId === c.id
               return (
@@ -150,6 +155,9 @@ export default function ConnectorPlacementPage() {
               />
             )}
           </div>
+          {!isLoading && !isError && (
+            <Pagination page={connectorPage.page} pageCount={connectorPage.pageCount} onChange={connectorPage.setPage} />
+          )}
         </Card>
       </div>
 
