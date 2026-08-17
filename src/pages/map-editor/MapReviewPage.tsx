@@ -783,10 +783,9 @@ export default function MapReviewPage() {
           </div>
           <p className="mt-2 text-[13px] text-muted">
             영역을 <strong>클릭</strong>하면 통행 영역이 채워집니다. 출입구처럼 벽이 뚫려 밖으로 샐 때는{' '}
-            <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요. 지도 위에서 <strong>휠</strong>로 바로
-            확대·축소할 수 있고, <strong>Ctrl+휠</strong>(트랙패드는 Ctrl+두 손가락)로 화면을 이동할 수
-            있어요 — <strong>스페이스바</strong>를 누른 채 드래그하거나 마우스{' '}
-            <strong>가운데 버튼</strong>으로 드래그해도 어떤 도구를 쓰던 중이든 바로 이동됩니다.
+            <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요. <strong>Ctrl+휠</strong>(트랙패드는 Ctrl+두
+            손가락) 또는 <strong>스페이스바</strong>를 누른 채 드래그하거나 마우스{' '}
+            <strong>가운데 버튼</strong>을 사용하면 어떤 도구를 쓰던 중이든 화면 이동 가능합니다.
           </p>
         </div>
 
@@ -795,8 +794,8 @@ export default function MapReviewPage() {
           <div className="grid gap-2">
             {toolBtn('fill', '영역 채우기')}
             {toolBtn('drawArea', '영역 그리기 (사각형)')}
-            {toolBtn('wall', '벽 그리기 (틈 막기)')}
             {toolBtn('erase', '영역 지우기 (사각형)')}
+            {toolBtn('wall', '벽 그리기 (틈 막기)')}
             {toolBtn('scale', '축척 설정')}
             {toolBtn('pan', '화면 이동')}
           </div>
@@ -809,7 +808,7 @@ export default function MapReviewPage() {
               onClick={undo}
               title="실행 취소 (Ctrl+Z)"
             >
-              되돌리기
+              ← 되돌리기
             </Button>
             <Button
               variant="outline"
@@ -818,7 +817,7 @@ export default function MapReviewPage() {
               onClick={redo}
               title="다시 실행 (Ctrl+Shift+Z)"
             >
-              다시실행
+              다시실행 →
             </Button>
           </div>
 
