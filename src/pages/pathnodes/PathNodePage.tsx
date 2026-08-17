@@ -11,6 +11,10 @@ import { useLandmarks } from '@/features/landmarks/hooks'
 import { generatePathNodes } from '@/features/mapEditor/pathNodes'
 import type { EntrancePoint, PathEdge, PathNode } from '@/features/mapEditor/pathNodes'
 import { findShortestPath } from '@/features/mapEditor/pathfind'
+import { pathNodesStorageKey, readStoredPathNodes } from '@/features/mapEditor/pathNodesStorage'
+import type { StoredPathNodes } from '@/features/mapEditor/pathNodesStorage'
+import { arrowheadPoints } from '@/lib/canvasArrows'
+import { pathNodeColor } from '@/features/mapEditor/pathNodeColors'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
@@ -19,59 +23,9 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const DESIGN_W = 900 // 비콘/랜드마크 좌표 기준 폭 — FloorMapCanvas.DESIGN_W와 동일
 
-const ENTRANCE_COLOR: Record<'connector' | 'landmark', string> = {
-  connector: '#2563eb',
-  landmark: '#f2992e',
-}
-
-function nodeColor(node: PathNode): string {
-  if (node.type === 'corner') return node.concave ? '#db2777' : '#7c3aed'
-  if (node.type === 'connector' || node.type === 'landmark') return ENTRANCE_COLOR[node.type]
-  // facing: 입구(연결자/랜드마크)의 맞은편이면 그 색, 코너에서 뻗어나온 맞은편이면 코너와 같은 보라
-  return node.pairKind ? ENTRANCE_COLOR[node.pairKind] : '#7c3aed'
-}
-
-// 건너기(cross) 엣지가 a->b 한쪽 방향만 가능하다는 걸 점선만으로는 알기 어려워서, 화살촉 삼각형 좌표를
-// 계산해 방향을 명확히 보여준다. tipX/tipY 위치에 화살촉 끝이 오도록, from->to 방향을 기준으로 그린다.
-function arrowheadPoints(fromX: number, fromY: number, tipX: number, tipY: number, size: number): number[] {
-  const angle = Math.atan2(tipY - fromY, tipX - fromX)
-  const spread = 0.5
-  return [
-    tipX,
-    tipY,
-    tipX - size * Math.cos(angle - spread),
-    tipY - size * Math.sin(angle - spread),
-    tipX - size * Math.cos(angle + spread),
-    tipY - size * Math.sin(angle + spread),
-  ]
-}
-
 const DEFAULT_CROSSING_MAX_M = 12 // 축척 미설정 시 기본 횡단 가능 거리(대략 240px 상당)
 const MIN_CORNER_CLEARANCE_M = 0.3 // 코너 횡단 좌우 최소 여유 — 이보다 벽이 가까우면 벽을 타는 걸로 보고 안 만든다
 const DEFAULT_CROSS_PENALTY_M = 5 // 건너기 페널티 기본값 — 이만큼 이상 절약될 때만 건넘
-
-function storageKey(floorId: string) {
-  return `pathNodes:${floorId}`
-}
-
-interface StoredPathNodes {
-  nodes: PathNode[]
-  edges: PathEdge[]
-  maskW: number
-  maskH: number
-}
-
-function readStoredPathNodes(floorId: string): StoredPathNodes | null {
-  if (!floorId) return null
-  const raw = localStorage.getItem(storageKey(floorId))
-  if (!raw) return null
-  try {
-    return JSON.parse(raw) as StoredPathNodes
-  } catch {
-    // 저장된 값이 손상된 경우 무시하고 새로 생성하도록 둔다
-    return null
-  }
-}
 
 // 저장된 마스크(PNG, 투명=미통행) 를 디코딩해 픽셀 단위 Uint8Array로 변환
 function decodeMask(dataUrl: string, w: number, h: number): Promise<Uint8Array> {
@@ -150,6 +104,9 @@ export default function PathNodePage() {
   // 자동 생성 결과에 섞여 나오는 불필요한 노드(예: 코너 근처의 잘못된 맞은편 지점)를 직접 지울 수
   // 있게 하는 모드 — 테스트 모드와 동시에 켜두면 클릭 동작이 겹치므로 서로 배타적으로 켠다.
   const [deleteMode, setDeleteMode] = useState(false)
+  // 대각선 벽 근처처럼 자동 판정으로는 걸러낼 수 없는 횡단 엣지를, 노드는 그대로 두고 엣지 하나만
+  // 관리자가 직접 지울 수 있게 하는 모드 — 다른 모드와 배타적으로 켠다.
+  const [edgeDeleteMode, setEdgeDeleteMode] = useState(false)
 
   const stageRef = useRef<Konva.Stage>(null)
   const [zoom, setZoom] = useState(1)
@@ -198,7 +155,7 @@ export default function PathNodePage() {
 
   function persist(nextNodes: PathNode[], nextEdges: PathEdge[], dims: { w: number; h: number }) {
     const payload: StoredPathNodes = { nodes: nextNodes, edges: nextEdges, maskW: dims.w, maskH: dims.h }
-    localStorage.setItem(storageKey(floorId), JSON.stringify(payload))
+    localStorage.setItem(pathNodesStorageKey(floorId), JSON.stringify(payload))
   }
 
   // 지금 상태를 되돌리기 스택에 남긴다 — 다시실행 스택은 새 작업이 생겼으니 비운다.
@@ -343,6 +300,19 @@ export default function PathNodePage() {
     persist(nextNodes, nextEdges, maskDims)
   }
 
+  // 노드는 그대로 두고, 자동 생성이 걸러내지 못한 횡단 엣지 하나만 지운다(예: 대각선 벽 근처처럼
+  // 자동 판정이 못 잡는 경우). type까지 같이 비교해야, 우연히 같은 두 노드 사이에 벽선과 횡단이
+  // 둘 다 있는 경우 엉뚱한 쪽이 지워지지 않는다.
+  function deleteEdge(target: PathEdge) {
+    if (!maskDims) return
+    pushHistory()
+    const nextEdges = edges.filter(
+      (edge) => !(edge.type === target.type && ((edge.a === target.a && edge.b === target.b) || (edge.a === target.b && edge.b === target.a))),
+    )
+    setEdges(nextEdges)
+    persist(nodes, nextEdges, maskDims)
+  }
+
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
   const scale = maskDims ? width / maskDims.w : 0
   const H = displayImg ? Math.round((displayImg.height / displayImg.width) * width) : 0
@@ -370,6 +340,7 @@ export default function PathNodePage() {
 
   function toggleTestMode() {
     setDeleteMode(false)
+    setEdgeDeleteMode(false)
     setTestMode((v) => {
       const next = !v
       if (!next) {
@@ -389,10 +360,20 @@ export default function PathNodePage() {
     setTestMode(false)
     setTestStart(null)
     setTestEnd(null)
+    setEdgeDeleteMode(false)
     setDeleteMode((v) => !v)
   }
 
+  function toggleEdgeDeleteMode() {
+    setTestMode(false)
+    setTestStart(null)
+    setTestEnd(null)
+    setDeleteMode(false)
+    setEdgeDeleteMode((v) => !v)
+  }
+
   function onNodeClick(nodeId: string) {
+    if (edgeDeleteMode) return
     if (deleteMode) {
       deleteNode(nodeId)
       return
@@ -465,7 +446,7 @@ export default function PathNodePage() {
                 onWheel={onWheel}
               >
                 <Layer listening={false}>{displayImg && <KonvaImage image={displayImg} width={width} height={H} />}</Layer>
-                <Layer listening={false}>
+                <Layer listening={edgeDeleteMode}>
                   {edges.map((edge) => {
                     const a = byId.get(edge.a)
                     const b = byId.get(edge.b)
@@ -475,6 +456,19 @@ export default function PathNodePage() {
                     const bx = b.x * scale
                     const by = b.y * scale
                     const isCross = edge.type === 'cross'
+                    const isEdgeClickable = isCross && edgeDeleteMode
+                    const onEdgeClick = isEdgeClickable
+                      ? (e: Konva.KonvaEventObject<MouseEvent>) => {
+                          e.cancelBubble = true
+                          deleteEdge(edge)
+                        }
+                      : undefined
+                    const onEdgeEnter = (e: Konva.KonvaEventObject<MouseEvent>) => {
+                      if (isEdgeClickable) e.target.getStage()!.container().style.cursor = 'pointer'
+                    }
+                    const onEdgeLeave = (e: Konva.KonvaEventObject<MouseEvent>) => {
+                      if (isEdgeClickable) e.target.getStage()!.container().style.cursor = 'default'
+                    }
                     return (
                       <Fragment key={`${edge.type}-${edge.a}-${edge.b}`}>
                         <Line
@@ -482,6 +476,11 @@ export default function PathNodePage() {
                           stroke={isCross ? '#16a34a' : '#7c3aed'}
                           strokeWidth={(isCross ? 1.6 : 1) / zoom}
                           dash={isCross ? [4 / zoom, 3 / zoom] : undefined}
+                          listening={edgeDeleteMode ? isCross : false}
+                          hitStrokeWidth={isEdgeClickable ? 16 / zoom : undefined}
+                          onClick={onEdgeClick}
+                          onMouseEnter={onEdgeEnter}
+                          onMouseLeave={onEdgeLeave}
                         />
                         {isCross && (
                           // 화살촉 하나만, 크고 흰 테두리를 둘러서 배경(도면 선·다른 점)과 겹쳐도
@@ -490,12 +489,18 @@ export default function PathNodePage() {
                           // 화살촉 크기를 고정값(11px)으로 두면, 복도가 좁아 건너기 거리가 화면상
                           // 그보다 짧을 때 화살촉 뒤쪽 밑변이 시작점(흔히 그 자신도 벽에 붙어있는
                           // 입구/코너)을 지나쳐 벽과 겹쳐 보인다 — 건너기 길이에 비례해 상한을 둔다.
+                          // 엣지 삭제 모드에서는 화살촉도 클릭 대상이다 — 얇은 점선보다 훨씬 넓어서
+                          // 클릭하기 쉽다.
                           <Line
                             points={arrowheadPoints(ax, ay, bx, by, Math.min(11 / zoom, Math.hypot(bx - ax, by - ay) * 0.4))}
                             closed
                             fill="#16a34a"
                             stroke="#ffffff"
                             strokeWidth={1.1 / zoom}
+                            listening={edgeDeleteMode}
+                            onClick={onEdgeClick}
+                            onMouseEnter={onEdgeEnter}
+                            onMouseLeave={onEdgeLeave}
                           />
                         )}
                       </Fragment>
@@ -529,11 +534,11 @@ export default function PathNodePage() {
                         key={node.id}
                         x={node.x * scale}
                         y={node.y * scale}
-                        radius={(isStart || isEnd ? 9 : 7) / zoom}
-                        fill={isStart ? '#16a34a' : isEnd ? '#dc2626' : node.type === 'facing' ? undefined : nodeColor(node)}
-                        stroke={isStart || isEnd ? '#fff' : node.type === 'facing' ? nodeColor(node) : '#fff'}
-                        strokeWidth={(isStart || isEnd ? 2 : node.type === 'facing' ? 1.6 : 1.4) / zoom}
-                        draggable={!testMode && !deleteMode}
+                        radius={(isStart || isEnd ? 9 : node.type === 'facing' ? 9 : 7) / zoom}
+                        fill={isStart ? '#16a34a' : isEnd ? '#dc2626' : node.type === 'facing' ? undefined : pathNodeColor(node)}
+                        stroke={isStart || isEnd ? '#fff' : node.type === 'facing' ? pathNodeColor(node) : '#fff'}
+                        strokeWidth={(isStart || isEnd ? 2 : node.type === 'facing' ? 2 : 1.4) / zoom}
+                        draggable={!testMode && !deleteMode && !edgeDeleteMode}
                         onClick={() => onNodeClick(node.id)}
                         onDragStart={(e: Konva.KonvaEventObject<DragEvent>) => {
                           e.cancelBubble = true
@@ -651,6 +656,21 @@ export default function PathNodePage() {
           {deleteMode && (
             <p className="text-[12px] text-muted mt-1.5">
               지울 노드를 클릭하세요. 실수하면 되돌리기(Ctrl+Z)로 복구할 수 있어요.
+            </p>
+          )}
+
+          <Button
+            variant={edgeDeleteMode ? 'danger' : 'outline'}
+            className="w-full mt-2"
+            disabled={edges.filter((e) => e.type === 'cross').length === 0}
+            onClick={toggleEdgeDeleteMode}
+          >
+            {edgeDeleteMode ? '건너기 엣지 삭제 모드 끄기' : '건너기 엣지 삭제 모드'}
+          </Button>
+          {edgeDeleteMode && (
+            <p className="text-[12px] text-muted mt-1.5">
+              대각선 벽 근처처럼 자동으로 안 걸러지는 건너기 화살표를 직접 클릭해서 지우세요. 노드는
+              그대로 남습니다. 실수하면 되돌리기(Ctrl+Z)로 복구할 수 있어요.
             </p>
           )}
 

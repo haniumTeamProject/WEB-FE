@@ -24,6 +24,7 @@ import BeaconEditPage from '@/pages/beacons/BeaconEditPage'
 const LandmarkPage = lazy(() => import('@/pages/landmarks/LandmarkPage'))
 import LandmarkEditPage from '@/pages/landmarks/LandmarkEditPage'
 const PathNodePage = lazy(() => import('@/pages/pathnodes/PathNodePage'))
+const FloorOverviewPage = lazy(() => import('@/pages/overview/FloorOverviewPage'))
 import AccountApprovalPage from '@/pages/admin/AccountApprovalPage'
 import GuidelinesPage from '@/pages/guidelines/GuidelinesPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
@@ -98,6 +99,14 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<p style={{ color: '#8C99B3' }}>불러오는 중…</p>}>
             <PathNodePage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/buildings/:buildingId/floors/:floorId/overview',
+        element: (
+          <Suspense fallback={<p style={{ color: '#8C99B3' }}>불러오는 중…</p>}>
+            <FloorOverviewPage />
           </Suspense>
         ),
       },

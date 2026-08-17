@@ -130,6 +130,35 @@ function simplify(points: Point[], epsilon: number): Point[] {
   ]
 }
 
+// simplify()가 만든 경계선은 마스크가 손으로 살짝 삐뚤게 칠해진 경우, 원래 하나의 곧은 벽(수평·수직
+// 이든 대각선이든 상관없이)인 구간이 살짝씩 어긋난 여러 조각(점)으로 남아있을 수 있다 — 그대로 두면
+// 벽 엣지(보라색 선)가 꼭짓점 사이에서 미세하게 꺾여 보인다. 세 점이 이미 거의 일직선이면(각도 상관
+// 없이) 가운데 점을 지워 양 끝 두 점을 직접 잇는다. 수평/수직으로 강제로 맞추지는 않는다 — 실제로
+// 대각선인 벽(계단 등)을 억지로 직각으로 꺾으면 실제 벽 모양과 달라져 오히려 더 이상해진다(실제
+// 발견된 문제, 지도 경계 밖으로 삐져나가기도 했다). 이 허용치보다 많이 벌어진, 진짜로 방향이 바뀌는
+// 지점(진짜 코너)은 건드리지 않는다.
+const COLLINEAR_MERGE_TOLERANCE_PX = 3
+
+function mergeNearCollinearPoints(loop: Point[]): Point[] {
+  if (loop.length < 3) return loop
+  const result = [...loop]
+  let changed = true
+  while (changed && result.length > 2) {
+    changed = false
+    for (let i = 0; i < result.length; i++) {
+      const a = result[(i - 1 + result.length) % result.length]
+      const b = result[i]
+      const c = result[(i + 1) % result.length]
+      if (perpendicularDistance(b, a, c) <= COLLINEAR_MERGE_TOLERANCE_PX) {
+        result.splice(i, 1)
+        changed = true
+        break
+      }
+    }
+  }
+  return result
+}
+
 // loop을 닫힌 폴리곤(마지막 점 → 첫 점 연결 포함)으로 보고, point에 가장 가까운 지점을 구한다.
 function nearestPointOnLoop(loop: Point[], point: Point): { point: Point; segmentIndex: number; t: number; distance: number } {
   let best = { point: loop[0], segmentIndex: 0, t: 0, distance: Infinity }
@@ -145,6 +174,28 @@ function nearestPointOnLoop(loop: Point[], point: Point): { point: Point; segmen
     if (distance < best.distance) best = { point: projected, segmentIndex: i, t, distance }
   }
   return best
+}
+
+// 맞은편(facing) 지점은 castToWall로 찾은 원시 픽셀 좌표라, mergeNearCollinearPoints로 정리된 벽선과
+// 미세하게(마스크 원본 흔들림만큼) 어긋나 있을 수 있다 — 그대로 두면 벽선 트레이싱에 이 점이 끼어들
+// 때 그 지점에서만 살짝 꺾여 보인다. 벽이 수평/수직이 아니라 아주 살짝 기울어져 있어도(마스크 흔들림
+// 정도) 그 실제 기울기를 따라간다 — fixedAxis(캐스팅 방향과 같아서 origin과 반드시 일치해야 하는
+// 축, 건너기 화살표 정렬용)는 절대 건드리지 않고, 그 축의 현재 값에서 벽 세그먼트가 실제로 지나가는
+// 반대쪽 축 좌표를 선형보간으로 구해 맞춘다. 벽이 fixedAxis 방향과 완전히 평행(그 축 방향으로 전혀
+// 안 이어짐)이면 보정할 수 없으니 원본을 그대로 둔다.
+function snapFacingPointToWall(point: Point, simplifiedLoop: Point[], fixedAxis: 0 | 1): Point {
+  const nearest = nearestPointOnLoop(simplifiedLoop, point)
+  if (nearest.distance > MERGE_RADIUS_PX) return point
+  const p1 = simplifiedLoop[nearest.segmentIndex]
+  const p2 = simplifiedLoop[(nearest.segmentIndex + 1) % simplifiedLoop.length]
+  const span = p2[fixedAxis] - p1[fixedAxis]
+  if (span === 0) return point
+  const t = (point[fixedAxis] - p1[fixedAxis]) / span
+  const freeAxis: 0 | 1 = fixedAxis === 0 ? 1 : 0
+  const snapped: Point = [0, 0]
+  snapped[fixedAxis] = point[fixedAxis]
+  snapped[freeAxis] = p1[freeAxis] + t * (p2[freeAxis] - p1[freeAxis])
+  return snapped
 }
 
 // 횡단 후보는 대각선 방향의 벽 각도를 추정하지 않고 상하좌우 4방향만 본다 — 건물 복도가 대부분
@@ -279,6 +330,11 @@ interface LoopEntry {
   t: number
   distanceToLoop: number // point가 simplifiedLoop 경계선에서 얼마나 떨어져 있는지 — 벽선 트레이싱에 끼워도 되는지 판단용
   concave?: boolean // kind === 'corner'일 때만 의미 있음 — simplifiedLoop 원래 이웃 기준으로 미리 계산해둔다
+  // 코너 또는 맞은편(facing)으로 "만들어졌을" 때만 true — 실제로 벽 경계 위의 점이라는 뜻이다. 나중에
+  // 입구(connector/landmark)와 병합돼 kind가 바뀌어도 이 값은 바뀌지 않는다 — 벽 트레이싱 메인
+  // 루프에 계속 껴 있어야 한다(원래 코너였던 자리를 건너뛰면 그 자리가 대각선으로 이어져 버린다,
+  // 실제 발견된 문제). 입구 자신만으로 새로 생긴 점(병합 안 됨)은 false — 메인 루프에 안 낀다.
+  isWallVertex: boolean
 }
 
 export function generatePathNodes(
@@ -308,7 +364,7 @@ export function generatePathNodes(
     .filter((component) => component.count >= MIN_COMPONENT_PIXELS)
     .map(({ componentId }) => {
       const rawLoop = traceBoundary(mask, w, h, labels, componentId)
-      const simplifiedLoop = simplify(rawLoop, SIMPLIFY_EPSILON_PX)
+      const simplifiedLoop = mergeNearCollinearPoints(simplify(rawLoop, SIMPLIFY_EPSILON_PX))
       return { rawLoop, simplifiedLoop }
     })
     .filter((component) => component.rawLoop.length > 0 && component.simplifiedLoop.length >= 3)
@@ -338,17 +394,23 @@ export function generatePathNodes(
       const [px, py] = simplifiedLoop[(index - 1 + loopLength) % loopLength]
       const [nx, ny] = simplifiedLoop[(index + 1) % loopLength]
       const concave = (x - px) * (ny - y) - (y - py) * (nx - x) < 0
-      return { point: [x, y], kind: 'corner', segmentIndex: index, t: 0, distanceToLoop: 0, concave }
+      return { point: [x, y], kind: 'corner', segmentIndex: index, t: 0, distanceToLoop: 0, concave, isWallVertex: true }
     })
 
     // axisLock: 'facing' 지점을 넣을 때, 상하좌우 캐스팅 결과가 반드시 지켜야 하는 축 좌표. 지정되면
     // 그 축이 다른 기존 노드에는 (거리가 가까워도) 절대 병합하지 않는다 — 안 그러면 다른 방향에서
     // 찾아낸, 축이 다른 노드에 흡수되면서 건너기 엣지가 사선이 되거나(안전장치에 걸려 통째로 버려짐)
     // 아예 안 생기는 원인이 된다.
-    // keepSeparateFromEntrances: 입구(목적지/연결자) 자기 자신을 넣을 때만 true로 준다 — 서로 다른 두
-    // 목적지가 우연히 MERGE_RADIUS_PX 이내로 가깝게 찍혀 있어도 하나로 합쳐져 버리면(예: 문 하나에 표시가
-    // 2개) 둘 중 하나가 통째로 사라져 버린다. entrance는 각자 자기 노드를 반드시 가져야 하므로, 이미
-    // connector/landmark인 기존 노드에는 절대 병합하지 않는다(코너/맞은편에는 그대로 병합·흡수 가능).
+    // blockMergeIntoKinds: 이 종류(kind)를 가진 기존 노드에는 절대 병합하지 않는다.
+    // - 입구(목적지/연결자) 자기 자신을 넣을 때는 ['connector','landmark','facing']을 준다. 서로 다른
+    //   두 목적지가 우연히 MERGE_RADIUS_PX 이내로 가깝게 찍혀 있어도 하나로 합쳐지면(예: 문 하나에
+    //   표시가 2개) 둘 중 하나가 통째로 사라진다. 또, 다른 입구의 맞은편(facing) 지점에 합쳐지면 그
+    //   맞은편이 통째로 이 입구로 둔갑해서, 원래 그 맞은편을 쓰던 건너기 엣지가 목적지끼리 직접 이어진
+    //   것처럼 사선으로 보인다(실제 발견된 문제) — 코너에는 그대로 병합·흡수 가능하다(코너=이 자리가
+    //   바로 그 입구라는 뜻이라 정상).
+    // - 맞은편(facing) 지점을 넣을 때는 ['connector','landmark']만 준다. 남의 입구 노드에 흡수되면
+    //   위와 같은 이유로 사선처럼 보이는 문제가 생긴다. 다른 방향에서 찾은 맞은편끼리 겹치는 건
+    //   허용해야 하므로(코너 맞은편과 입구 맞은편이 우연히 겹치는 정상 케이스) 'facing'은 막지 않는다.
     // exclude: 병합에서 제외할 기존 노드(들) — 같은 출발점(origin)에서 이번에 상하좌우로 쏴서 이미
     // 찾은 다른 방향의 맞은편 노드들도 함께 넘겨야 한다. 안 그러면 복도 폭이 MERGE_RADIUS_PX보다 좁을
     // 때 위쪽 맞은편과 아래쪽 맞은편이 서로 가깝다는 이유만으로 하나로 합쳐져 버려서(위/아래는 애초에
@@ -359,13 +421,13 @@ export function generatePathNodes(
       pairKind?: 'connector' | 'landmark',
       exclude?: LoopEntry | LoopEntry[],
       axisLock?: { axis: 0 | 1; value: number },
-      keepSeparateFromEntrances?: boolean,
+      blockMergeIntoKinds?: NodeKind[],
     ): LoopEntry {
       const excludeList = exclude ? (Array.isArray(exclude) ? exclude : [exclude]) : []
       const existing = entries.find(
         (entry) =>
           !excludeList.includes(entry) &&
-          !(keepSeparateFromEntrances && (entry.kind === 'connector' || entry.kind === 'landmark')) &&
+          !blockMergeIntoKinds?.includes(entry.kind) &&
           Math.hypot(entry.point[0] - point[0], entry.point[1] - point[1]) <= MERGE_RADIUS_PX &&
           (!axisLock || entry.point[axisLock.axis] === axisLock.value),
       )
@@ -390,6 +452,7 @@ export function generatePathNodes(
         segmentIndex: nearest.segmentIndex,
         t: nearest.t,
         distanceToLoop: nearest.distance,
+        isWallVertex: kind === 'facing',
       }
       entries.push(entry)
       return entry
@@ -400,11 +463,28 @@ export function generatePathNodes(
       // 입구 원래 좌표가 통행영역 위에 있으면 거기서 그대로 쏴야, 방 안쪽에서 문을 통해 진짜 반대편
       // 벽까지 가로지르는 케이스를 놓치지 않는다. 반대로 원래 좌표가 통행 불가 지점(마스크에 안 칠해진
       // 방 등)이면, castToWall이 첫 걸음부터 실패해 4방향 다 못 찾는다 — 이때는 경계에 스냅된 지점(snap,
-      // 항상 통행영역 위)에서 쏴야 맞은편을 찾을 수 있다. 노드 위치(entranceEntry)도 반드시 이거랑
-      // 똑같은 값을 써야 한다 — 노드는 snap에, 맞은편 탐색은 raw에 각각 따로 기준을 두면 둘이 어긋나서
-      // 건너기 엣지가 사선으로 그려지는 원인이 된다(실제로 발견된 버그).
-      const facingOrigin: Point = isWalkableAt(mask, w, h, [entrance.x, entrance.y]) ? [entrance.x, entrance.y] : snap
-      const entranceEntry = findOrInsert(facingOrigin, entrance.kind, undefined, undefined, undefined, true)
+      // 항상 통행영역 위)에서 쏴야 맞은편을 찾을 수 있다.
+      const rawOrigin: Point = isWalkableAt(mask, w, h, [entrance.x, entrance.y]) ? [entrance.x, entrance.y] : snap
+      // 입구가 꼭짓점끼리 이은 벽선에 충분히 가까우면(=원래 벽 트레이싱 순서에 낄 자리면) 그 선 위의
+      // 정확한 지점으로 스냅해서 노드를 만든다 — 사용자가 명시적으로 "입구 노드는 꼭짓점 사이를 이은
+      // 선 위에 있어야 한다"고 요청했다. 문틀/기둥 바로 옆(가장 가까운 벽이 문이 열린 방향이 아닌
+      // 경우)에서는 이 스냅 때문에 반대편까지 가로지르는 진짜 횡단을 못 찾을 수 있다는 걸 확인하고도
+      // 이 우선순위를 선택했다 — 노드 위치가 화면상 선 위에 있는 걸 캐스팅 정확도보다 우선한다. 멀리
+      // 있는 입구(방 안쪽 깊숙한 목적지 등)는 원래 좌표를 그대로 쓴다. 노드 위치(entranceEntry)와
+      // 맞은편 탐색(cardinalFacingPoints)의 원점은 반드시 이거랑 똑같은 값을 써야 한다 — 서로 다른
+      // 기준을 쓰면 건너기 엣지가 사선으로 그려지는 원인이 된다(실제로 발견된 버그).
+      const wallProjection = nearestPointOnLoop(simplifiedLoop, rawOrigin)
+      const proposedOrigin: Point = wallProjection.distance <= MERGE_RADIUS_PX ? wallProjection.point : rawOrigin
+      const entranceEntry = findOrInsert(proposedOrigin, entrance.kind, undefined, undefined, undefined, [
+        'connector',
+        'landmark',
+        'facing',
+      ])
+      // 맞은편 탐색은 항상 노드의 최종 위치(entranceEntry.point)에서 한다 — 벽 위로 스냅하려던 좌표가
+      // 마침 근처의 기존 코너와 병합되면(예: 코너 바로 옆) 노드는 그 코너의 원래 위치를 그대로 쓰는데,
+      // 캐스팅은 병합 전 좌표에서 하면 노드 위치와 캐스팅 원점이 어긋나 건너기 엣지가 사선이 되거나
+      // 안전장치에 걸려 통째로 사라진다(실제로 발견된 버그).
+      const facingOrigin = entranceEntry.point
       // 코너처럼 minClearancePx(허깅 필터)를 같이 넘긴다 — 입구가 일직선 복도 위에 있으면 위/아래
       // (진짜 복도 폭 횡단)뿐 아니라 좌/우(복도를 따라 쭉 나가는 방향, 사실상 벽을 타면 바로 닿는
       // 곳)까지 전부 유효한 후보로 잡혀서 같은 벽에 불필요하게 여러 방향의 화살표가 생기는 문제가
@@ -416,16 +496,24 @@ export function generatePathNodes(
         console.warn(`[pathNodes] facing point not found: kind=${entrance.kind} at (${entrance.x}, ${entrance.y})`)
       }
       const facingEntriesSoFar: LoopEntry[] = []
-      for (const facingRaw of facingPoints) {
-        // facingRaw는 이미 origin에서 정확히 상하좌우로만 쏴서 찾은 지점이라 origin과 x 또는 y가
-        // 정확히 같다. 예전엔 이걸 경계 폴리라인(rawLoop) 위의 "가장 가까운 점"으로 다시 스냅했는데,
-        // 그 투영이 축에서 살짝 벗어나면서 화살표가 사선으로 보이던 원인이었다 — 원본 그대로 쓴다.
-        // 맞은편 지점이 자기 짝인 입구 노드 자체와, 그리고 같은 입구에서 이미 찾은 다른 방향의
-        // 맞은편들과도 병합되지 않도록 제외한다(좁은 복도에서 위/아래 맞은편이 서로 가까워도 둘 다
-        // 살아남아야 한다 — 실제로 발견된 버그).
-        const axisLock: { axis: 0 | 1; value: number } =
-          facingRaw[0] === facingOrigin[0] ? { axis: 0, value: facingRaw[0] } : { axis: 1, value: facingRaw[1] }
-        const facingEntry = findOrInsert(facingRaw, 'facing', entrance.kind, [entranceEntry, ...facingEntriesSoFar], axisLock)
+      for (const facingRawCast of facingPoints) {
+        // facingRawCast는 origin에서 정확히 상하좌우로만 쏴서 찾은 지점이라 origin과 x 또는 y가 정확히
+        // 같다 — 이 축(건너기 방향)은 절대 건드리면 안 된다(예전엔 반대쪽 축까지 통째로 재투영해서
+        // 사선이 되던 버그가 있었다). snapFacingPointToWall은 그 반대 축(벽을 따라가는 축)만 벽선에
+        // 맞춰 보정하므로 건너기 정렬은 그대로 유지된다. 맞은편 지점이 자기 짝인 입구 노드 자체와,
+        // 그리고 같은 입구에서 이미 찾은 다른 방향의 맞은편들과도 병합되지 않도록 제외한다(좁은
+        // 복도에서 위/아래 맞은편이 서로 가까워도 둘 다 살아남아야 한다 — 실제로 발견된 버그).
+        const fixedAxis: 0 | 1 = facingRawCast[0] === facingOrigin[0] ? 0 : 1
+        const facingRaw = snapFacingPointToWall(facingRawCast, simplifiedLoop, fixedAxis)
+        const axisLock: { axis: 0 | 1; value: number } = { axis: fixedAxis, value: facingRaw[fixedAxis] }
+        const facingEntry = findOrInsert(
+          facingRaw,
+          'facing',
+          entrance.kind,
+          [entranceEntry, ...facingEntriesSoFar],
+          axisLock,
+          ['connector', 'landmark'],
+        )
         facingEntriesSoFar.push(facingEntry)
         pairs.push({ a: entranceEntry, b: facingEntry })
       }
@@ -449,13 +537,17 @@ export function generatePathNodes(
       const minDistance = Math.min(...distances)
       const keptFacingPoints = facingPoints.filter((_, i) => distances[i] <= minDistance * SIMILAR_LENGTH_RATIO)
       const facingEntriesSoFar: LoopEntry[] = []
-      for (const facingRaw of keptFacingPoints) {
-        // facingRaw는 cornerEntry.point에서 정확히 상하좌우로만 쏴서 찾은 지점 그대로 쓴다(위 입구
-        // 쪽과 같은 이유 — rawLoop에 재투영하면 축에서 벗어나 사선으로 보일 수 있다). 같은 코너에서
-        // 이미 남긴 다른 방향의 맞은편들과도 병합되지 않도록 제외한다(위 입구 쪽과 같은 이유).
-        const axisLock: { axis: 0 | 1; value: number } =
-          facingRaw[0] === cornerEntry.point[0] ? { axis: 0, value: facingRaw[0] } : { axis: 1, value: facingRaw[1] }
-        const facingEntry = findOrInsert(facingRaw, 'facing', undefined, [cornerEntry, ...facingEntriesSoFar], axisLock)
+      for (const facingRawCast of keptFacingPoints) {
+        // 위 입구 쪽과 같은 이유 — 건너기 축(origin과 일치해야 하는 축)은 그대로 두고, 벽을 따라가는
+        // 반대 축만 snapFacingPointToWall로 벽선에 맞춘다. 같은 코너에서 이미 남긴 다른 방향의
+        // 맞은편들과도 병합되지 않도록 제외한다(위 입구 쪽과 같은 이유).
+        const fixedAxis: 0 | 1 = facingRawCast[0] === cornerEntry.point[0] ? 0 : 1
+        const facingRaw = snapFacingPointToWall(facingRawCast, simplifiedLoop, fixedAxis)
+        const axisLock: { axis: 0 | 1; value: number } = { axis: fixedAxis, value: facingRaw[fixedAxis] }
+        const facingEntry = findOrInsert(facingRaw, 'facing', undefined, [cornerEntry, ...facingEntriesSoFar], axisLock, [
+          'connector',
+          'landmark',
+        ])
         facingEntriesSoFar.push(facingEntry)
         pairs.push({ a: cornerEntry, b: facingEntry })
       }
@@ -487,16 +579,23 @@ export function generatePathNodes(
     // 벽선(폴리곤) 트레이싱은 실제로 경계 위(또는 아주 가까이)에 있는 점들끼리만 정렬 순서대로 이어야
     // 한다 — 목적지/연결자처럼 방 안쪽 깊숙이 찍힌 점이 segmentIndex/t 정렬 순서상 중간에 끼어들면,
     // 그 점의 실제 좌표(원래 찍힌 위치 그대로 씀)와 이웃 사이를 잇는 선이 방을 대각선으로 가로질러
-    // 버린다(실제로 발견된 버그). 경계에서 먼 점은 메인 루프에서 빼고, 대신 가장 가까운 경계 점 하나
-    // 에만 짧게 연결한다 — 문에서 방 안쪽 목적지까지 걸어 들어가는 구간으로 보면 된다.
-    const onLoopIndices = entries.map((entry, index) => (entry.distanceToLoop <= MERGE_RADIUS_PX ? index : -1)).filter((i) => i !== -1)
+    // 버린다(실제로 발견된 버그). 입구(connector/landmark)만으로 새로 생긴 점(원래 코너와 병합되지
+    // 않은 경우)은 벽에 아무리 가깝게 찍혀 있어도 메인 벽 루프에는 절대 끼워 넣지 않는다 — 입구
+    // 좌표는 사용자가 찍은 원래 위치 그대로 써야 하는데, 그걸 직선으로 보정된 벽 순서 중간에 끼우면
+    // 그 지점만 살짝 벽에서 떠서 꺾여 보인다(실제 발견된 문제). 대신 항상 가장 가까운 경계 점 하나에만
+    // 짧게 연결한다. 반대로 입구가 원래 있던 코너와 병합된 경우(isWallVertex=true, kind만
+    // connector/landmark로 바뀜)는 실제로는 여전히 그 코너 자리이므로 메인 루프에서 빼면 안 된다 —
+    // 빼면 그 코너를 건너뛰고 양옆이 대각선으로 바로 이어져 버린다(실제 발견된 문제). 코너/맞은편
+    // (facing)은 원래부터 벽 위의 지점이라 그대로 메인 루프에 낀다.
+    const isOnMainWallLoop = (entry: LoopEntry) => entry.isWallVertex && entry.distanceToLoop <= MERGE_RADIUS_PX
+    const onLoopIndices = entries.map((entry, index) => (isOnMainWallLoop(entry) ? index : -1)).filter((i) => i !== -1)
     for (let i = 0; i < onLoopIndices.length; i++) {
       const a = componentNodes[onLoopIndices[i]]
       const b = componentNodes[onLoopIndices[(i + 1) % onLoopIndices.length]]
       addEdge(a, b, 'wall')
     }
     for (let index = 0; index < entries.length; index++) {
-      if (entries[index].distanceToLoop <= MERGE_RADIUS_PX) continue
+      if (isOnMainWallLoop(entries[index])) continue
       const point = entries[index].point
       let nearestIndex = -1
       let nearestDistance = Infinity
@@ -506,6 +605,28 @@ export function generatePathNodes(
         if (d < nearestDistance) {
           nearestDistance = d
           nearestIndex = candidateIndex
+        }
+      }
+      // 유클리드 최단거리 후보가 사선이면, 비슷한 거리(SIMILAR_LENGTH_RATIO배 이내) 안에 좌우/상하로
+      // 딱 맞는(직선) 후보가 있는지 한 번 더 찾아 그쪽을 우선한다 — 안내선이 괜히 사선으로 붕 떠
+      // 보이는 걸 줄인다. 훨씬 멀리 있는 직선 후보까지 무리하게 끌어오지는 않는다.
+      if (nearestIndex !== -1) {
+        const nearestPoint = entries[nearestIndex].point
+        if (point[0] !== nearestPoint[0] && point[1] !== nearestPoint[1]) {
+          let straightIndex = -1
+          let straightDistance = Infinity
+          for (const candidateIndex of onLoopIndices) {
+            const candidate = entries[candidateIndex].point
+            if (candidate[0] !== point[0] && candidate[1] !== point[1]) continue
+            const d = Math.hypot(candidate[0] - point[0], candidate[1] - point[1])
+            if (d < straightDistance) {
+              straightDistance = d
+              straightIndex = candidateIndex
+            }
+          }
+          if (straightIndex !== -1 && straightDistance <= nearestDistance * SIMILAR_LENGTH_RATIO) {
+            nearestIndex = straightIndex
+          }
         }
       }
       if (nearestIndex !== -1) addEdge(componentNodes[index], componentNodes[nearestIndex], 'wall')

@@ -87,6 +87,11 @@ export default function BuildingDetailPage() {
                     경로노드
                   </Button>
                 </Link>
+                <Link to={`/buildings/${buildingId}/floors/${f.id}/overview`}>
+                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+                    종합 확인
+                  </Button>
+                </Link>
               </div>
             </div>
           ))}
