@@ -147,6 +147,9 @@ export default function PathNodePage() {
   const [testStart, setTestStart] = useState<string | null>(null)
   const [testEnd, setTestEnd] = useState<string | null>(null)
   const [crossPenaltyM, setCrossPenaltyM] = useState(String(DEFAULT_CROSS_PENALTY_M))
+  // 자동 생성 결과에 섞여 나오는 불필요한 노드(예: 코너 근처의 잘못된 맞은편 지점)를 직접 지울 수
+  // 있게 하는 모드 — 테스트 모드와 동시에 켜두면 클릭 동작이 겹치므로 서로 배타적으로 켠다.
+  const [deleteMode, setDeleteMode] = useState(false)
 
   const stageRef = useRef<Konva.Stage>(null)
   const [zoom, setZoom] = useState(1)
@@ -328,6 +331,18 @@ export default function PathNodePage() {
     })
   }
 
+  // 노드를 지우면 그 노드에 연결된 엣지(벽선·건너기)도 같이 지운다 — 안 그러면 존재하지 않는
+  // 노드를 가리키는 엣지가 남아 그래프가 깨진다. 되돌리기(Ctrl+Z)로 실수해도 복구할 수 있다.
+  function deleteNode(id: string) {
+    if (!maskDims) return
+    pushHistory()
+    const nextNodes = nodes.filter((node) => node.id !== id)
+    const nextEdges = edges.filter((edge) => edge.a !== id && edge.b !== id)
+    setNodes(nextNodes)
+    setEdges(nextEdges)
+    persist(nextNodes, nextEdges, maskDims)
+  }
+
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
   const scale = maskDims ? width / maskDims.w : 0
   const H = displayImg ? Math.round((displayImg.height / displayImg.width) * width) : 0
@@ -354,6 +369,7 @@ export default function PathNodePage() {
   }
 
   function toggleTestMode() {
+    setDeleteMode(false)
     setTestMode((v) => {
       const next = !v
       if (!next) {
@@ -367,6 +383,21 @@ export default function PathNodePage() {
   function clearTest() {
     setTestStart(null)
     setTestEnd(null)
+  }
+
+  function toggleDeleteMode() {
+    setTestMode(false)
+    setTestStart(null)
+    setTestEnd(null)
+    setDeleteMode((v) => !v)
+  }
+
+  function onNodeClick(nodeId: string) {
+    if (deleteMode) {
+      deleteNode(nodeId)
+      return
+    }
+    onNodeClickForTest(nodeId)
   }
 
   const crumbs = [
@@ -456,8 +487,11 @@ export default function PathNodePage() {
                           // 화살촉 하나만, 크고 흰 테두리를 둘러서 배경(도면 선·다른 점)과 겹쳐도
                           // 방향이 확실히 보이게 한다 — 중간 화살표는 촘촘한 교차로에서 여러 개가
                           // 겹쳐 오히려 지저분해 보여서 뺐다.
+                          // 화살촉 크기를 고정값(11px)으로 두면, 복도가 좁아 건너기 거리가 화면상
+                          // 그보다 짧을 때 화살촉 뒤쪽 밑변이 시작점(흔히 그 자신도 벽에 붙어있는
+                          // 입구/코너)을 지나쳐 벽과 겹쳐 보인다 — 건너기 길이에 비례해 상한을 둔다.
                           <Line
-                            points={arrowheadPoints(ax, ay, bx, by, 11 / zoom)}
+                            points={arrowheadPoints(ax, ay, bx, by, Math.min(11 / zoom, Math.hypot(bx - ax, by - ay) * 0.4))}
                             closed
                             fill="#16a34a"
                             stroke="#ffffff"
@@ -499,8 +533,8 @@ export default function PathNodePage() {
                         fill={isStart ? '#16a34a' : isEnd ? '#dc2626' : node.type === 'facing' ? undefined : nodeColor(node)}
                         stroke={isStart || isEnd ? '#fff' : node.type === 'facing' ? nodeColor(node) : '#fff'}
                         strokeWidth={(isStart || isEnd ? 2 : node.type === 'facing' ? 1.6 : 1.4) / zoom}
-                        draggable={!testMode}
-                        onClick={() => onNodeClickForTest(node.id)}
+                        draggable={!testMode && !deleteMode}
+                        onClick={() => onNodeClick(node.id)}
                         onDragStart={(e: Konva.KonvaEventObject<DragEvent>) => {
                           e.cancelBubble = true
                           setNodeDragging(true)
@@ -593,7 +627,7 @@ export default function PathNodePage() {
               onClick={undo}
               title="실행 취소 (Ctrl+Z)"
             >
-              되돌리기
+              ← 되돌리기
             </Button>
             <Button
               variant="outline"
@@ -602,9 +636,23 @@ export default function PathNodePage() {
               onClick={redo}
               title="다시 실행 (Ctrl+Shift+Z)"
             >
-              다시실행
+              다시실행 →
             </Button>
           </div>
+
+          <Button
+            variant={deleteMode ? 'danger' : 'outline'}
+            className="w-full mt-2"
+            disabled={nodes.length === 0}
+            onClick={toggleDeleteMode}
+          >
+            {deleteMode ? '노드 삭제 모드 끄기' : '노드 삭제 모드'}
+          </Button>
+          {deleteMode && (
+            <p className="text-[12px] text-muted mt-1.5">
+              지울 노드를 클릭하세요. 실수하면 되돌리기(Ctrl+Z)로 복구할 수 있어요.
+            </p>
+          )}
 
           <div className="mt-4 pt-4 border-t border-line">
             <span className="block text-[13px] text-muted mb-2">화면 확대/축소</span>
@@ -612,7 +660,12 @@ export default function PathNodePage() {
               <Button variant="outline" onClick={() => zoomBy(1 / 1.3)}>
                 −
               </Button>
-              <Button variant="outline" onClick={resetView}>
+              <Button
+                variant="outline"
+                className="whitespace-nowrap"
+                style={{ padding: '0 4px' }}
+                onClick={resetView}
+              >
                 {Math.round(zoom * 100)}%
               </Button>
               <Button variant="outline" onClick={() => zoomBy(1.3)}>
