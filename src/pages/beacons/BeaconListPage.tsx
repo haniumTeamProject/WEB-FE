@@ -43,8 +43,12 @@ export default function BeaconListPage() {
   const update = useUpdateBeacon(floorId)
   const del = useDeleteBeacon(floorId)
 
-  // 목록은 10개씩 나눠 보여준다. 삭제로 마지막 페이지가 비면 usePagination이 보정한다.
-  const beaconPage = usePagination(beacons ?? [], 10)
+  // 의미비콘은 왼쪽, 보강비콘은 오른쪽 열로 나눠 각각 10개씩 페이지네이션한다.
+  // (한 줄로 쭉 나열하면 세로로만 길어져 가로 공간이 낭비된다.)
+  const semanticBeacons = (beacons ?? []).filter((b) => b.type === 'semantic')
+  const reinforcementBeacons = (beacons ?? []).filter((b) => b.type === 'reinforcement')
+  const semanticPage = usePagination(semanticBeacons, 10)
+  const reinforcementPage = usePagination(reinforcementBeacons, 10)
 
   const [name, setName] = useState('')
   const [mac, setMac] = useState('')
@@ -266,6 +270,40 @@ export default function BeaconListPage() {
     )
   }
 
+  // 두 열이 공유하는 비콘 행. 좁아진 열 폭에 맞춰 이름·메타는 위아래로 쌓고 버튼은 오른쪽에 둔다.
+  const beaconRow = (b: Beacon) => (
+    <div key={b.id} className="flex items-center justify-between gap-2 p-3 border border-line rounded-lg">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: TYPE_COLOR[b.type] }} />
+          <span className="font-medium truncate">{b.name}</span>
+          {b.sourceLabel && (
+            <span className="text-[11px] text-muted border border-line rounded px-1.5 py-0.5 shrink-0">
+              {b.sourceLabel}
+            </span>
+          )}
+        </div>
+        <div className="text-[13px] text-muted mt-0.5 truncate">
+          {b.mac ? `${b.mac} · ` : ''}major {b.major} · minor {b.minor}
+        </div>
+      </div>
+      <div className="flex gap-2 shrink-0">
+        <Link to={`/buildings/${buildingId}/floors/${floorId}/beacons/${b.id}`}>
+          <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+            편집
+          </Button>
+        </Link>
+        <Button
+          variant="danger"
+          style={{ height: 34, padding: '0 12px' }}
+          onClick={() => setDeleteTarget({ id: b.id, name: b.name })}
+        >
+          삭제
+        </Button>
+      </div>
+    </div>
+  )
+
   return (
     <div>
       <Breadcrumb items={crumbs} />
@@ -383,41 +421,40 @@ export default function BeaconListPage() {
         {importError && <p className="text-[13px] mt-2" style={{ color: '#DC4C4C' }}>{importError}</p>}
         {beaconsLoading && <AsyncState status="loading" />}
         {beaconsError && <AsyncState status="error" onRetry={() => refetchBeacons()} />}
-        <div className="grid gap-2 mt-3">
-          {!beaconsLoading && !beaconsError && beaconPage.pageItems.map((b) => (
-            <div key={b.id} className="flex items-center justify-between p-3 border border-line rounded-lg">
-              <div className="flex items-center gap-3">
-                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: TYPE_COLOR[b.type] }} />
-                <span className="font-medium">{b.name}</span>
-                {b.sourceLabel && (
-                  <span className="text-[11px] text-muted border border-line rounded px-1.5 py-0.5">
-                    {b.sourceLabel}
-                  </span>
-                )}
-                <span className="text-[13px] text-muted">
-                  {b.mac ? `${b.mac} · ` : ''}major {b.major} · minor {b.minor} · {TYPE_LABEL[b.type]}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <Link to={`/buildings/${buildingId}/floors/${floorId}/beacons/${b.id}`}>
-                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
-                    편집
-                  </Button>
-                </Link>
-                <Button
-                  variant="danger"
-                  style={{ height: 34, padding: '0 12px' }}
-                  onClick={() => setDeleteTarget({ id: b.id, name: b.name })}
-                >
-                  삭제
-                </Button>
-              </div>
-            </div>
-          ))}
-          {beacons && beacons.length === 0 && <AsyncState status="empty" title="등록된 비콘이 없습니다." />}
-        </div>
         {!beaconsLoading && !beaconsError && (
-          <Pagination page={beaconPage.page} pageCount={beaconPage.pageCount} onChange={beaconPage.setPage} />
+          <div className="grid grid-cols-2 gap-6 mt-4">
+            {/* 왼쪽: 의미비콘 */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: TYPE_COLOR.semantic }} />
+                <h4 className="text-sm font-semibold text-ink">{TYPE_LABEL.semantic}</h4>
+                <span className="text-[13px] text-muted">{semanticBeacons.length}</span>
+              </div>
+              <div className="grid gap-2">
+                {semanticPage.pageItems.map(beaconRow)}
+                {semanticBeacons.length === 0 && <AsyncState status="empty" title="의미비콘이 없습니다." />}
+              </div>
+              <Pagination page={semanticPage.page} pageCount={semanticPage.pageCount} onChange={semanticPage.setPage} />
+            </div>
+
+            {/* 오른쪽: 보강비콘 */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: TYPE_COLOR.reinforcement }} />
+                <h4 className="text-sm font-semibold text-ink">{TYPE_LABEL.reinforcement}</h4>
+                <span className="text-[13px] text-muted">{reinforcementBeacons.length}</span>
+              </div>
+              <div className="grid gap-2">
+                {reinforcementPage.pageItems.map(beaconRow)}
+                {reinforcementBeacons.length === 0 && <AsyncState status="empty" title="보강비콘이 없습니다." />}
+              </div>
+              <Pagination
+                page={reinforcementPage.page}
+                pageCount={reinforcementPage.pageCount}
+                onChange={reinforcementPage.setPage}
+              />
+            </div>
+          </div>
         )}
       </Card>
 
