@@ -28,6 +28,7 @@ import type { ReinforcementPlanItem } from '@/lib/reinforcementBeacons'
 import { parseMappinProjectFile, toDesignCoords, diffImport } from '@/lib/mapImport'
 import type { ImportPlan } from '@/lib/mapImport'
 import { loadBeaconDraft, saveBeaconDraft } from '@/features/beacons/beaconDraftStorage'
+import { wrapKo } from '@/lib/wrapKo'
 import type { Beacon } from '@/types/domain'
 
 const PENDING_ID = '__pending__'
@@ -271,7 +272,7 @@ export default function BeaconListPage() {
         <Breadcrumb items={crumbs} />
         <h1>비콘 등록</h1>
         <Card>
-          <p className="text-muted">지도 검수에서 통행 영역을 먼저 저장해야 비콘을 배치할 수 있습니다.</p>
+          <p className="text-muted">{wrapKo('지도 검수에서 통행 영역을 먼저 저장해야 비콘을 배치할 수 있습니다.')}</p>
           <Link to={`/buildings/${buildingId}/floors/${floorId}/map`} className="inline-block mt-3">
             <Button>지도 검수로 이동</Button>
           </Link>

@@ -30,6 +30,8 @@
     -moz-osx-font-smoothing: grayscale;
     word-break: keep-all;
     overflow-wrap: break-word;
+    /* 마지막 줄에 한 단어만 남는 등 어색한 줄나눔을 브라우저가 완화(지원 브라우저 한정). */
+    text-wrap: pretty;
   }
   h1 {
     @apply text-2xl font-bold text-ink mb-5;
