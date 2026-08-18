@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
@@ -27,6 +27,7 @@ import { D_MAX_M, planReinforcementBeacons } from '@/lib/reinforcementBeacons'
 import type { ReinforcementPlanItem } from '@/lib/reinforcementBeacons'
 import { parseMappinProjectFile, toDesignCoords, diffImport } from '@/lib/mapImport'
 import type { ImportPlan } from '@/lib/mapImport'
+import { loadBeaconDraft, saveBeaconDraft } from '@/features/beacons/beaconDraftStorage'
 import type { Beacon } from '@/types/domain'
 
 const PENDING_ID = '__pending__'
@@ -50,11 +51,20 @@ export default function BeaconListPage() {
   const semanticPage = usePagination(semanticBeacons, 10)
   const reinforcementPage = usePagination(reinforcementBeacons, 10)
 
-  const [name, setName] = useState('')
-  const [mac, setMac] = useState('')
-  const [minor, setMinor] = useState('')
+  // 작성 중이던 폼은 층별 초안으로 복원한다. 축척을 설정하러 다른 화면에 다녀와도
+  // 이름·MAC·minor·찍어둔 위치를 잃지 않고 이어서 등록할 수 있게 한다.
+  const [name, setName] = useState(() => loadBeaconDraft(floorId)?.name ?? '')
+  const [mac, setMac] = useState(() => loadBeaconDraft(floorId)?.mac ?? '')
+  const [minor, setMinor] = useState(() => loadBeaconDraft(floorId)?.minor ?? '')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
-  const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null)
+  const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(
+    () => loadBeaconDraft(floorId)?.pendingPos ?? null,
+  )
+
+  // 입력이 바뀔 때마다 초안을 보관한다. 등록 성공 시 폼이 비면 saveBeaconDraft가 초안을 지운다.
+  useEffect(() => {
+    saveBeaconDraft(floorId, { name, mac, minor, pendingPos })
+  }, [floorId, name, mac, minor, pendingPos])
   const [alignSnapEnabled, setAlignSnapEnabled] = useState(true)
   const [corridorSnapEnabled, setCorridorSnapEnabled] = useState(true)
 
@@ -333,8 +343,14 @@ export default function BeaconListPage() {
               <Toggle checked={corridorSnapEnabled} onChange={setCorridorSnapEnabled} />
             </label>
             {corridorSnapEnabled && !scale && (
-              <span style={{ color: '#DC4C4C' }}>
+              <span style={{ color: '#DC4C4C' }} className="inline-flex items-center gap-2 flex-wrap">
                 ⚠ 축척 미설정 — 지도 검수에서 축척을 먼저 설정해야 복도 폭을 정확히 판단합니다
+                <Link
+                  to={`/buildings/${buildingId}/floors/${floorId}/map`}
+                  className="text-brand font-semibold whitespace-nowrap hover:underline"
+                >
+                  축척 설정하러 가기 →
+                </Link>
               </span>
             )}
             {corridorSnapEnabled && scale && (
