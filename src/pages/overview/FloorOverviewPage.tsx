@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Konva from 'konva'
 import { Stage, Layer, Image as KonvaImage, Circle, Line, RegularPolygon } from 'react-konva'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
@@ -14,6 +14,7 @@ import { pathNodeColor } from '@/features/mapEditor/pathNodeColors'
 import { arrowheadPoints } from '@/lib/canvasArrows'
 import { BEACON_TYPE_COLOR, BEACON_TYPE_LABEL, CONNECTOR_COLOR, MAP_DESIGN_W as DESIGN_W } from '@/lib/constants'
 import { Toggle } from '@/components/ui/Toggle'
+import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 
@@ -283,7 +284,16 @@ export default function FloorOverviewPage() {
         <span style={{ color: '#8C99B3' }}>○ 경로노드 맞은편 지점</span>
       </div>
 
-      <StepFooter buildingId={buildingId} floorId={floorId} current="overview" />
+      <StepFooter
+        buildingId={buildingId}
+        floorId={floorId}
+        current="overview"
+        extra={
+          <Link to={`/buildings/${buildingId}`}>
+            <Button variant="outline">건물 상세로 돌아가기</Button>
+          </Link>
+        }
+      />
     </div>
   )
 }

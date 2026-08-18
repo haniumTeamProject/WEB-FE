@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 
@@ -22,11 +23,13 @@ export function StepFooter({
   floorId,
   current,
   saveAction,
+  extra,
 }: {
   buildingId: string
   floorId: string
   current: StepKey
   saveAction?: { label: string; disabled?: boolean; onClick: () => void }
+  extra?: ReactNode
 }) {
   const index = STEPS.findIndex((s) => s.key === current)
   const prev = STEPS[index - 1]
@@ -41,6 +44,7 @@ export function StepFooter({
         )}
       </div>
       <div className="flex gap-2">
+        {extra}
         {saveAction && (
           <Button disabled={saveAction.disabled} onClick={saveAction.onClick}>
             {saveAction.label}
