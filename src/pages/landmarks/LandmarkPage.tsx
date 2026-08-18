@@ -40,8 +40,18 @@ export default function LandmarkPage() {
   const update = useUpdateLandmark(floorId)
   const del = useDeleteLandmark(floorId)
 
-  // 목록은 10개씩 나눠 보여준다.
-  const landmarkPage = usePagination(landmarks ?? [], 10)
+  // 목록을 지도상 위치 기준 왼쪽→오른쪽으로 정렬한다(x 오름차순, x가 같으면 위→아래).
+  // 관리자가 도면을 훑는 순서와 목록 순서가 일치해 어떤 목적지인지 찾기 쉽다.
+  // 위치가 아직 없는 목적지는 맨 뒤로 보낸다.
+  const orderedLandmarks = [...(landmarks ?? [])].sort((a, b) => {
+    const ax = a.x ?? Infinity
+    const bx = b.x ?? Infinity
+    if (ax !== bx) return ax - bx
+    return (a.y ?? Infinity) - (b.y ?? Infinity)
+  })
+
+  // 목록은 5개씩 나눠 보여준다.
+  const landmarkPage = usePagination(orderedLandmarks, 5)
 
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
