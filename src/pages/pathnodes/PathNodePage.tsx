@@ -328,6 +328,50 @@ export default function PathNodePage() {
   }, [nodes, edges, testStart, testEnd, crossPenaltyPx])
   const testDistanceM = testResult && savedScale ? testResult.distancePx * savedScale.scaleMPerPx : null
 
+  // 진단: 시작 노드에서 도달 가능한 노드 집합(방향 엣지 반영). 도달 못 하는 노드는 흐리게 표시해
+  // 그래프가 어디서 끊겼는지 눈으로 드러낸다. "경로 없음"이 뜰 때 원인 위치를 바로 보이게 하는 용도.
+  const reachableFromStart = useMemo(() => {
+    if (!testMode || !testStart) return null
+    const adj = new Map<string, string[]>()
+    for (const n of nodes) adj.set(n.id, [])
+    for (const e of edges) {
+      adj.get(e.a)?.push(e.b)
+      if (!e.directed) adj.get(e.b)?.push(e.a)
+    }
+    const seen = new Set<string>([testStart])
+    const stack = [testStart]
+    while (stack.length) {
+      const cur = stack.pop()!
+      for (const nx of adj.get(cur) ?? []) if (!seen.has(nx)) { seen.add(nx); stack.push(nx) }
+    }
+    return seen
+  }, [testMode, testStart, nodes, edges])
+
+  // 진단: 그래프가 물리적으로 몇 조각인지(무방향 기준). 1이 아니면 층이 끊긴 것 — 조각이 다른
+  // 두 노드 사이엔 경로가 없다. 통행 영역(마스크)이 갈라졌거나 잇는 건너기 엣지가 빠진 결과다.
+  const componentCount = useMemo(() => {
+    if (nodes.length === 0) return 0
+    const adj = new Map<string, string[]>()
+    for (const n of nodes) adj.set(n.id, [])
+    for (const e of edges) {
+      adj.get(e.a)?.push(e.b)
+      adj.get(e.b)?.push(e.a)
+    }
+    const seen = new Set<string>()
+    let count = 0
+    for (const n of nodes) {
+      if (seen.has(n.id)) continue
+      count++
+      const stack = [n.id]
+      seen.add(n.id)
+      while (stack.length) {
+        const cur = stack.pop()!
+        for (const nx of adj.get(cur) ?? []) if (!seen.has(nx)) { seen.add(nx); stack.push(nx) }
+      }
+    }
+    return count
+  }, [nodes, edges])
+
   function onNodeClickForTest(nodeId: string) {
     if (!testMode) return
     if (!testStart || (testStart && testEnd)) {
@@ -532,6 +576,7 @@ export default function PathNodePage() {
                     return (
                       <Circle
                         key={node.id}
+                        opacity={reachableFromStart && !reachableFromStart.has(node.id) ? 0.18 : 1}
                         x={node.x * scale}
                         y={node.y * scale}
                         radius={(isStart || isEnd ? 9 : node.type === 'facing' ? 9 : 7) / zoom}
@@ -623,6 +668,12 @@ export default function PathNodePage() {
             {generating ? '생성 중…' : nodes.length ? '경로 노드 다시 생성' : '경로 노드 생성'}
           </Button>
           {genSummary && <p className="text-[11px] text-muted mt-1.5 leading-relaxed">{genSummary}</p>}
+          {componentCount > 1 && (
+            <p className="text-[12px] mt-2 leading-relaxed" style={{ color: '#DC4C4C' }}>
+              ⚠ 그래프가 {componentCount}조각으로 끊겨 있습니다 — 조각이 다른 두 지점 사이엔 경로가 없습니다.
+              노드를 지우다 이렇게 됐다면 되돌리기(←)로 복구하세요.
+            </p>
+          )}
 
           <div className="grid grid-cols-2 gap-2 mt-2">
             <Button
@@ -711,6 +762,12 @@ export default function PathNodePage() {
                   : !testEnd
                     ? '도착 노드를 클릭하세요.'
                     : '다시 클릭하면 시작 노드부터 새로 고를 수 있어요.'}
+              </p>
+            )}
+            {testMode && testStart && reachableFromStart && (
+              <p className="text-[12px] text-muted mt-1">
+                시작점에서 도달 가능 {reachableFromStart.size} / 전체 {nodes.length}개
+                {reachableFromStart.size < nodes.length && ' (도달 불가 노드는 흐리게 표시)'}
               </p>
             )}
 
