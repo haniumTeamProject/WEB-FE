@@ -149,4 +149,14 @@ describe('dedupeClosePlanItems', () => {
     const result = dedupeClosePlanItems(items, 1)
     expect(result).toHaveLength(2)
   })
+
+  it('간선의 끝점이 아닌, 그냥 근처에 있던 다른 의미비콘과 겹치면 버린다(실제 발견된 문제)', () => {
+    const items = [
+      { x: 10, y: 0, pair: ['A', 'B'] as [string, string] }, // A-B 간선의 보간점
+    ]
+    // C는 A-B 간선과 무관한 제3의 의미비콘인데, 우연히 보간점 바로 옆(1m)에 서 있다.
+    const existingSemanticPoints = [{ x: 11, y: 0 }]
+    const result = dedupeClosePlanItems(items, 1, existingSemanticPoints)
+    expect(result).toHaveLength(0)
+  })
 })

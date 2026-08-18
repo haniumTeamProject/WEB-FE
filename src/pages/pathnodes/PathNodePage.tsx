@@ -17,13 +17,14 @@ import { arrowheadPoints } from '@/lib/canvasArrows'
 import { pathNodeColor } from '@/features/mapEditor/pathNodeColors'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { InfoTooltip } from '@/components/ui/InfoTooltip'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const DESIGN_W = 900 // 비콘/랜드마크 좌표 기준 폭 — FloorMapCanvas.DESIGN_W와 동일
 
-const DEFAULT_CROSSING_MAX_M = 12 // 축척 미설정 시 기본 횡단 가능 거리(대략 240px 상당)
+const DEFAULT_CROSSING_MAX_M = 3 // 축척 미설정 시 기본 횡단 가능 거리(대략 60px 상당)
 const MIN_CORNER_CLEARANCE_M = 0.3 // 코너 횡단 좌우 최소 여유 — 이보다 벽이 가까우면 벽을 타는 걸로 보고 안 만든다
 const DEFAULT_CROSS_PENALTY_M = 5 // 건너기 페널티 기본값 — 이만큼 이상 절약될 때만 건넘
 
@@ -618,12 +619,16 @@ export default function PathNodePage() {
 
         <Card className="w-[260px] shrink-0">
           <h3>경로노드</h3>
-          <p className="text-muted text-[13px] mt-2">
-            비콘·목적지 입구를 기준으로 경로노드를 자동 생성합니다. 위치가 어색하면 점을 드래그해서 옮기세요.
-          </p>
+          <div className="flex items-center gap-1.5 mt-2 text-[13px] text-muted">
+            <span>사용법</span>
+            <InfoTooltip text="비콘·목적지 입구를 기준으로 경로노드를 자동 생성합니다. 위치가 어색하면 점을 드래그해서 옮기세요." />
+          </div>
 
           <div className="mt-4">
-            <span className="block text-[13px] text-muted mb-2">횡단 가능한 최대 거리</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              횡단 가능한 최대 거리
+              <InfoTooltip text="복도 건너편까지의 거리가 이 값보다 멀면 횡단 엣지를 만들지 않아요. 값을 키우면 넓은 홀이나 로비도 건너뛸 수 있게 되고, 줄이면 폭이 좁은 곳에서만 횡단 엣지가 생겨요." />
+            </span>
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-muted">최대</span>
               <input
@@ -644,7 +649,10 @@ export default function PathNodePage() {
           </div>
 
           <div className="mt-4">
-            <span className="block text-[13px] text-muted mb-2">코너 횡단 좌우 최소 여유</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              벽 근접 판정 거리
+              <InfoTooltip text="코너의 횡단 엣지 옆에 벽이 이미 가까이 있으면, 굳이 안 건너도 벽을 타고 갈 수 있으니 그 방향으로는 횡단 엣지를 만들지 않아요. 값을 높이면 더 멀리 있는 벽까지 '가깝다'고 보기 때문에 횡단 엣지가 더 적게 생기고, 0으로 두면 이 기능이 꺼져서 벽 바로 옆에서도 다 생겨요. 벽이 비스듬히 나 있는 경우엔 잘 못 걸러낼 수 있으니, 그럴 땐 거리를 좀 더 늘려보세요." />
+            </span>
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-muted">최소</span>
               <input
@@ -657,11 +665,6 @@ export default function PathNodePage() {
               />
               <span className="text-[12px] text-muted">m</span>
             </div>
-            <p className="text-[12px] text-muted mt-1">
-              벽 끝(코너) 횡단선의 옆(좌우 또는 상하)으로 이 거리 안에 벽이 있으면, 벽을 타면 바로 닿는
-              곳이라 보고 그 방향은 만들지 않습니다. 0으로 두면 끕니다. 벽이 반듯하지 않고 사선으로 나
-              있으면 좌우/상하로만 재는 이 검사가 못 잡을 수 있어 값을 좀 더 키우면 도움이 됩니다.
-            </p>
           </div>
 
           <Button className="w-full mt-4" disabled={generating} onClick={onGenerate}>
@@ -772,7 +775,10 @@ export default function PathNodePage() {
             )}
 
             <div className="mt-3">
-              <span className="block text-[13px] text-muted mb-2">건너기 페널티(이만큼 절약될 때만 건넘)</span>
+              <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+                건너기 페널티
+                <InfoTooltip text="직진 경로가 이 거리만큼 절약될 때만 횡단(건너기)을 선택합니다. 값을 키우면 웬만큼 이득이 커야만 건너고, 낮추면 조금만 가까워도 건넙니다." />
+              </span>
               <div className="flex items-center gap-2">
                 <span className="text-[12px] text-muted">+</span>
                 <input

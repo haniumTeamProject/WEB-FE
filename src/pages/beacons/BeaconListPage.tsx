@@ -340,7 +340,7 @@ export default function BeaconListPage() {
           </div>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-3 text-[13px]">
             <label className="flex items-center gap-2.5">
-              <span className="text-muted">복도 중앙 스냅</span>
+              <span className="text-muted">복도 중앙 배치</span>
               <Toggle checked={corridorSnapEnabled} onChange={setCorridorSnapEnabled} />
             </label>
             {corridorSnapEnabled && !scale && (
@@ -358,7 +358,7 @@ export default function BeaconListPage() {
               <span className="text-muted">현재 축척: 100px ≈ {(scale.scaleMPerPx * 100).toFixed(2)}m</span>
             )}
             <label className="flex items-center gap-2.5">
-              <span className="text-muted">다른 비콘과 정렬 스냅</span>
+              <span className="text-muted">다른 비콘과 정렬</span>
               <Toggle checked={alignSnapEnabled} onChange={setAlignSnapEnabled} />
             </label>
           </div>

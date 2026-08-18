@@ -314,8 +314,9 @@ const MIN_COMPONENT_PIXELS = 25
 const SIMPLIFY_EPSILON_PX = 3
 const MAX_SNAP_PX = 50
 const MERGE_RADIUS_PX = 6
-// 축척이 아직 없을 때(호출부에서 crossingMaxPx를 안 넘겼을 때)의 기본값 — 작업 캔버스 폭(~760px) 기준으로 가늠한 값.
-const DEFAULT_CROSSING_MAX_PX = 240
+// 축척이 아직 없을 때(호출부에서 crossingMaxPx를 안 넘겼을 때)의 기본값 — PathNodePage의
+// DEFAULT_CROSSING_MAX_M(3m)과 같은 20px/m 비율로 환산.
+const DEFAULT_CROSSING_MAX_PX = 60
 // 코너 횡단의 좌우 최소 여유 거리 기본값(약 0.3m 상당) — DEFAULT_CROSSING_MAX_PX와 같은 20px/m 비율로 환산.
 const DEFAULT_MIN_CLEARANCE_PX = 6
 // 코너 하나에서 여러 방향이 동시에 유효할 때, 가장 짧은 방향의 이 배수 이내인 것들은 "비슷한 길이"로

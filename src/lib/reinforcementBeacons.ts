@@ -159,18 +159,24 @@ export function findAdjacentPairs<T extends { id: string; x: number; y: number; 
 // 때문에 우연히 거의 같은 위치로 몰릴 수 있다 — 실질적으로 같은 지점을 중복 표시하는 것이므로,
 // 이미 채택한 점과 이 거리보다 가까우면 나중 점은 버린다. 한 간선 안에서 균등 삽입되는 점끼리는
 // 항상 D_MAX_M/2(3m) 이상 떨어지므로, 그보다 확실히 작은 값으로 잡아 정상 간격은 건드리지 않는다.
+//
+// 이 최소 간격 보장은 "그 보간점이 속한 간선의 두 끝(의미비콘)"에만 적용된다 — 만약 어떤 의미비콘이
+// 그 간선의 끝점이 아니라 그냥 근처에 있는 다른 비콘이라면, 이 거리 보장과 무관하게 우연히 아주
+// 가까이 찍힐 수 있다(실제 발견된 문제: 보강비콘이 상관없는 의미비콘 바로 옆에 겹쳐 생김). 그래서
+// 기존 의미비콘 위치도 함께 넘겨받아 같은 기준으로 걸러낸다.
 const MIN_REINFORCEMENT_SPACING_M = 2
 
 export function dedupeClosePlanItems(
   items: ReinforcementPlanItem[],
   mPerDesignPx: number,
+  existingPoints: { x: number; y: number }[] = [],
 ): ReinforcementPlanItem[] {
+  const isTooClose = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y) * mPerDesignPx < MIN_REINFORCEMENT_SPACING_M
   const kept: ReinforcementPlanItem[] = []
   for (const item of items) {
-    const tooClose = kept.some(
-      (k) => Math.hypot(item.x - k.x, item.y - k.y) * mPerDesignPx < MIN_REINFORCEMENT_SPACING_M,
-    )
-    if (tooClose) continue
+    if (existingPoints.some((p) => isTooClose(item, p))) continue
+    if (kept.some((k) => isTooClose(item, k))) continue
     kept.push(item)
   }
   return kept
@@ -213,5 +219,5 @@ export async function planReinforcementBeacons(
       plan.push({ x, y, pair: [a.id, b.id] })
     }
   }
-  return dedupeClosePlanItems(plan, mPerDesignPx)
+  return dedupeClosePlanItems(plan, mPerDesignPx, semanticPoints)
 }

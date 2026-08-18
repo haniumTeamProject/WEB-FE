@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { SentenceText } from '@/components/ui/SentenceText'
+import { InfoTooltip } from '@/components/ui/InfoTooltip'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 
@@ -781,12 +782,12 @@ export default function MapReviewPage() {
               </button>
             </div>
           </div>
-          <p className="mt-2 text-[13px] text-muted">
-            영역을 <strong>클릭</strong>하면 통행 영역이 채워집니다. 출입구처럼 벽이 뚫려 밖으로 샐 때는{' '}
-            <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요. <strong>Ctrl+휠</strong>(트랙패드는 Ctrl+두
-            손가락) 또는 <strong>스페이스바</strong>를 누른 채 드래그하거나 마우스{' '}
-            <strong>가운데 버튼</strong>을 사용하면 어떤 도구를 쓰던 중이든 화면 이동 가능합니다.
-          </p>
+          <div className="flex items-center gap-1.5 mt-2 text-[13px] text-muted">
+            <span>사용법</span>
+            <InfoTooltip
+              text="영역을 클릭하면 통행 영역이 채워집니다. 출입구처럼 벽이 뚫려 밖으로 샐 때는 벽 그리기로 틈을 막은 뒤 채우세요. Ctrl+휠(트랙패드는 Ctrl+두 손가락) 또는 스페이스바를 누른 채 드래그하거나 마우스 가운데 버튼을 사용하면 어떤 도구를 쓰던 중이든 화면 이동 가능합니다."
+            />
+          </div>
         </div>
 
         <Card className="w-[260px] shrink-0">
@@ -822,7 +823,10 @@ export default function MapReviewPage() {
           </div>
 
           <div className="mt-4">
-            <span className="block text-[13px] text-muted mb-2">벽 인식 민감도: {threshold}</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              벽 인식 민감도: {threshold}
+              <InfoTooltip text="밖으로 새면 ↑ 올리고, 방 안에서 안 퍼지면 ↓ 내리세요." />
+            </span>
             <input
               type="range"
               min={120}
@@ -831,16 +835,15 @@ export default function MapReviewPage() {
               onChange={(e) => setThreshold(Number(e.target.value))}
               className="w-full"
             />
-            <span className="block text-[12px] text-muted mt-1">
-              밖으로 새면 ↑ 올리고,
-              <br />방 안에서 안 퍼지면 ↓ 내리세요.
-            </span>
           </div>
 
           <div className="mt-4">
-            <span className="block text-[13px] text-muted mb-2">틈 메우기 (떨어진 복도 이어붙이기)</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              틈 메우기
+              <InfoTooltip text="복도가 살짝 끊어져 보이면, 아래 거리 이내일 때 자동으로 이어붙여요." />
+            </span>
             <div className="flex items-center gap-2">
-              <span className="text-[12px] text-muted">최대</span>
+              <span className="text-[12px] text-muted">이 거리까지 이어붙이기</span>
               <input
                 type="number"
                 min={0.01}
@@ -862,9 +865,12 @@ export default function MapReviewPage() {
           </div>
 
           <div className="mt-4">
-            <span className="block text-[13px] text-muted mb-2">노이즈 제거 (돌출부·구멍 깎기)</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              벽 모양 다듬기
+              <InfoTooltip text="자동으로 채워진 벽 모양이 울퉁불퉁하거나 작은 구멍·돌기가 있으면, 지정한 크기 이하는 매끄럽게 다듬어요." />
+            </span>
             <div className="flex items-center gap-2">
-              <span className="text-[12px] text-muted">최대</span>
+              <span className="text-[12px] text-muted">이 크기까지 다듬기</span>
               <input
                 type="number"
                 min={0.01}
@@ -881,13 +887,13 @@ export default function MapReviewPage() {
               disabled={!savedScale}
               onClick={applyNoiseRemove}
             >
-              노이즈 제거 적용
+              벽 다듬기 적용
             </Button>
           </div>
 
           {!savedScale && (
             <p className="text-[12px] text-muted mt-2">
-              틈 메우기·노이즈 제거는 축척을 먼저 설정해야 사용할 수 있습니다.
+              틈 메우기·벽 모양 다듬기는 축척을 먼저 설정해야 사용할 수 있습니다.
             </p>
           )}
 

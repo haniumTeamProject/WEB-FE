@@ -429,7 +429,9 @@ describe('generatePathNodes corner crossing', () => {
     rect(30, 0, 40, 4, 0) // 위쪽 벽에서 살짝 파낸 노치 — concave 코너 2개를 만든다
 
     const entrance = { x: 30, y: 90, kind: 'landmark' as const }
-    const { nodes, edges } = generatePathNodes(mask, W, H, [entrance])
+    // 입구(y=90)와 노치 코너(y≈4)는 86px 가까이 떨어져 있어, 이 테스트가 보려는 pairKind 병합 판정과
+    // 무관한 기본 횡단 거리 제한에 걸리지 않도록 넉넉한 값을 명시로 넘긴다.
+    const { nodes, edges } = generatePathNodes(mask, W, H, [entrance], 240)
     const byId = new Map(nodes.map((n) => [n.id, n]))
 
     const sharedFacing = nodes.find((n) => {
