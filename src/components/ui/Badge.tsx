@@ -1,8 +1,8 @@
 import type { FloorSetupStatus } from '@/types/domain'
-import { FLOOR_STATUS_BADGE } from '@/lib/constants'
+import { floorStatusBadge } from '@/lib/constants'
 
 export function StatusBadge({ status }: { status: FloorSetupStatus }) {
-  const b = FLOOR_STATUS_BADGE[status]
+  const b = floorStatusBadge(status)
   return (
     <span
       style={{
