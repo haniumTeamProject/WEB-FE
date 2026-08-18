@@ -48,6 +48,14 @@ export const FLOOR_STATUS_BADGE: Record<
   ready: { label: '안내 가능', bg: '#E6F7EE', fg: '#4BAE72' },
 }
 
+// 프론트가 모르는 상태값(백엔드가 새 status를 추가/변경하는 등)이 와도 크래시하지 않게
+// 안전하게 조회한다. 값이 없거나 알 수 없으면 회색 '—' 뱃지로 떨어뜨린다.
+// (FLOOR_STATUS_BADGE[unknown] 은 undefined라 .fg/.label 접근에서 화면이 통째로 깨진다.)
+const UNKNOWN_STATUS_BADGE = { label: '—', bg: '#EEEFF2', fg: '#8C99B3' }
+export function floorStatusBadge(status?: string): { label: string; bg: string; fg: string } {
+  return (status && FLOOR_STATUS_BADGE[status as FloorSetupStatus]) || UNKNOWN_STATUS_BADGE
+}
+
 // 사이드바 메뉴
 export const NAV_ITEMS = [
   { to: '/', label: '대시보드', end: true },

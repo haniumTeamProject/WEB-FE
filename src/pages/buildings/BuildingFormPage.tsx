@@ -1,3 +1,4 @@
+import { wrapKo } from '@/lib/wrapKo'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -59,7 +60,9 @@ export default function BuildingFormPage() {
             />
           </div>
           {create.isError && (
-            <p style={{ color: '#DC4C4C', fontSize: 13 }}>건물 등록에 실패했습니다. 건물 코드가 중복되지 않았는지 확인해 주세요.</p>
+            <p style={{ color: '#DC4C4C', fontSize: 13 }}>
+              {wrapKo('건물 등록에 실패했습니다. 건물 코드가 중복되지 않았는지 확인해 주세요.')}
+            </p>
           )}
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
             <Button type="submit" disabled={create.isPending}>

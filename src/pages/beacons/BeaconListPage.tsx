@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
@@ -16,6 +16,8 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Toggle } from '@/components/ui/Toggle'
 import { Button } from '@/components/ui/Button'
+import { Pagination } from '@/components/ui/Pagination'
+import { usePagination } from '@/lib/usePagination'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { AsyncState } from '@/components/ui/AsyncState'
@@ -25,6 +27,8 @@ import { D_MAX_M, planReinforcementBeacons } from '@/lib/reinforcementBeacons'
 import type { ReinforcementPlanItem } from '@/lib/reinforcementBeacons'
 import { parseMappinProjectFile, toDesignCoords, diffImport } from '@/lib/mapImport'
 import type { ImportPlan } from '@/lib/mapImport'
+import { loadBeaconDraft, saveBeaconDraft } from '@/features/beacons/beaconDraftStorage'
+import { wrapKo } from '@/lib/wrapKo'
 import type { Beacon } from '@/types/domain'
 
 const PENDING_ID = '__pending__'
@@ -41,11 +45,27 @@ export default function BeaconListPage() {
   const update = useUpdateBeacon(floorId)
   const del = useDeleteBeacon(floorId)
 
-  const [name, setName] = useState('')
-  const [mac, setMac] = useState('')
-  const [minor, setMinor] = useState('')
+  // 의미비콘은 왼쪽, 보강비콘은 오른쪽 열로 나눠 각각 5개씩 페이지네이션한다.
+  // (한 줄로 쭉 나열하면 세로로만 길어져 가로 공간이 낭비된다.)
+  const semanticBeacons = (beacons ?? []).filter((b) => b.type === 'semantic')
+  const reinforcementBeacons = (beacons ?? []).filter((b) => b.type === 'reinforcement')
+  const semanticPage = usePagination(semanticBeacons, 5)
+  const reinforcementPage = usePagination(reinforcementBeacons, 5)
+
+  // 작성 중이던 폼은 층별 초안으로 복원한다. 축척을 설정하러 다른 화면에 다녀와도
+  // 이름·MAC·minor·찍어둔 위치를 잃지 않고 이어서 등록할 수 있게 한다.
+  const [name, setName] = useState(() => loadBeaconDraft(floorId)?.name ?? '')
+  const [mac, setMac] = useState(() => loadBeaconDraft(floorId)?.mac ?? '')
+  const [minor, setMinor] = useState(() => loadBeaconDraft(floorId)?.minor ?? '')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
-  const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null)
+  const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(
+    () => loadBeaconDraft(floorId)?.pendingPos ?? null,
+  )
+
+  // 입력이 바뀔 때마다 초안을 보관한다. 등록 성공 시 폼이 비면 saveBeaconDraft가 초안을 지운다.
+  useEffect(() => {
+    saveBeaconDraft(floorId, { name, mac, minor, pendingPos })
+  }, [floorId, name, mac, minor, pendingPos])
   const [alignSnapEnabled, setAlignSnapEnabled] = useState(true)
   const [corridorSnapEnabled, setCorridorSnapEnabled] = useState(true)
 
@@ -252,7 +272,7 @@ export default function BeaconListPage() {
         <Breadcrumb items={crumbs} />
         <h1>비콘 등록</h1>
         <Card>
-          <p className="text-muted">지도 검수에서 통행 영역을 먼저 저장해야 비콘을 배치할 수 있습니다.</p>
+          <p className="text-muted">{wrapKo('지도 검수에서 통행 영역을 먼저 저장해야 비콘을 배치할 수 있습니다.')}</p>
           <Link to={`/buildings/${buildingId}/floors/${floorId}/map`} className="inline-block mt-3">
             <Button>지도 검수로 이동</Button>
           </Link>
@@ -260,6 +280,40 @@ export default function BeaconListPage() {
       </div>
     )
   }
+
+  // 두 열이 공유하는 비콘 행. 좁아진 열 폭에 맞춰 이름·메타는 위아래로 쌓고 버튼은 오른쪽에 둔다.
+  const beaconRow = (b: Beacon) => (
+    <div key={b.id} className="flex items-center justify-between gap-2 p-3 border border-line rounded-lg">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: TYPE_COLOR[b.type] }} />
+          <span className="font-medium truncate">{b.name}</span>
+          {b.sourceLabel && (
+            <span className="text-[11px] text-muted border border-line rounded px-1.5 py-0.5 shrink-0">
+              {b.sourceLabel}
+            </span>
+          )}
+        </div>
+        <div className="text-[13px] text-muted mt-0.5 truncate">
+          {b.mac ? `${b.mac} · ` : ''}major {b.major} · minor {b.minor}
+        </div>
+      </div>
+      <div className="flex gap-2 shrink-0">
+        <Link to={`/buildings/${buildingId}/floors/${floorId}/beacons/${b.id}`}>
+          <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
+            편집
+          </Button>
+        </Link>
+        <Button
+          variant="danger"
+          style={{ height: 34, padding: '0 12px' }}
+          onClick={() => setDeleteTarget({ id: b.id, name: b.name })}
+        >
+          삭제
+        </Button>
+      </div>
+    </div>
+  )
 
   return (
     <div>
@@ -290,8 +344,14 @@ export default function BeaconListPage() {
               <Toggle checked={corridorSnapEnabled} onChange={setCorridorSnapEnabled} />
             </label>
             {corridorSnapEnabled && !scale && (
-              <span style={{ color: '#DC4C4C' }}>
+              <span style={{ color: '#DC4C4C' }} className="inline-flex items-center gap-2 flex-wrap">
                 ⚠ 축척 미설정 — 지도 검수에서 축척을 먼저 설정해야 복도 폭을 정확히 판단합니다
+                <Link
+                  to={`/buildings/${buildingId}/floors/${floorId}/map`}
+                  className="text-brand font-semibold whitespace-nowrap hover:underline"
+                >
+                  축척 설정하러 가기 →
+                </Link>
               </span>
             )}
             {corridorSnapEnabled && scale && (
@@ -378,39 +438,41 @@ export default function BeaconListPage() {
         {importError && <p className="text-[13px] mt-2" style={{ color: '#DC4C4C' }}>{importError}</p>}
         {beaconsLoading && <AsyncState status="loading" />}
         {beaconsError && <AsyncState status="error" onRetry={() => refetchBeacons()} />}
-        <div className="grid gap-2 mt-3">
-          {!beaconsLoading && !beaconsError && beacons?.map((b) => (
-            <div key={b.id} className="flex items-center justify-between p-3 border border-line rounded-lg">
-              <div className="flex items-center gap-3">
-                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: TYPE_COLOR[b.type] }} />
-                <span className="font-medium">{b.name}</span>
-                {b.sourceLabel && (
-                  <span className="text-[11px] text-muted border border-line rounded px-1.5 py-0.5">
-                    {b.sourceLabel}
-                  </span>
-                )}
-                <span className="text-[13px] text-muted">
-                  {b.mac ? `${b.mac} · ` : ''}major {b.major} · minor {b.minor} · {TYPE_LABEL[b.type]}
-                </span>
+        {!beaconsLoading && !beaconsError && (
+          <div className="grid grid-cols-2 gap-6 mt-4">
+            {/* 왼쪽: 의미비콘 */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: TYPE_COLOR.semantic }} />
+                <h4 className="text-sm font-semibold text-ink">{TYPE_LABEL.semantic}</h4>
+                <span className="text-[13px] text-muted">{semanticBeacons.length}</span>
               </div>
-              <div className="flex gap-2">
-                <Link to={`/buildings/${buildingId}/floors/${floorId}/beacons/${b.id}`}>
-                  <Button variant="outline" style={{ height: 34, padding: '0 12px' }}>
-                    편집
-                  </Button>
-                </Link>
-                <Button
-                  variant="danger"
-                  style={{ height: 34, padding: '0 12px' }}
-                  onClick={() => setDeleteTarget({ id: b.id, name: b.name })}
-                >
-                  삭제
-                </Button>
+              <div className="grid gap-2">
+                {semanticPage.pageItems.map(beaconRow)}
+                {semanticBeacons.length === 0 && <AsyncState status="empty" title="의미비콘이 없습니다." />}
               </div>
+              <Pagination page={semanticPage.page} pageCount={semanticPage.pageCount} onChange={semanticPage.setPage} />
             </div>
-          ))}
-          {beacons && beacons.length === 0 && <AsyncState status="empty" title="등록된 비콘이 없습니다." />}
-        </div>
+
+            {/* 오른쪽: 보강비콘 */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: TYPE_COLOR.reinforcement }} />
+                <h4 className="text-sm font-semibold text-ink">{TYPE_LABEL.reinforcement}</h4>
+                <span className="text-[13px] text-muted">{reinforcementBeacons.length}</span>
+              </div>
+              <div className="grid gap-2">
+                {reinforcementPage.pageItems.map(beaconRow)}
+                {reinforcementBeacons.length === 0 && <AsyncState status="empty" title="보강비콘이 없습니다." />}
+              </div>
+              <Pagination
+                page={reinforcementPage.page}
+                pageCount={reinforcementPage.pageCount}
+                onChange={reinforcementPage.setPage}
+              />
+            </div>
+          </div>
+        )}
       </Card>
 
       <StepFooter buildingId={buildingId} floorId={floorId} current="beacons" />

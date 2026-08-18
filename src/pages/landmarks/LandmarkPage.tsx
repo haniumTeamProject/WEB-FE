@@ -16,6 +16,8 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { CategorySelect } from '@/components/ui/CategorySelect'
 import { Button } from '@/components/ui/Button'
+import { Pagination } from '@/components/ui/Pagination'
+import { usePagination } from '@/lib/usePagination'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { AsyncState } from '@/components/ui/AsyncState'
@@ -37,6 +39,19 @@ export default function LandmarkPage() {
   const create = useCreateLandmark(floorId)
   const update = useUpdateLandmark(floorId)
   const del = useDeleteLandmark(floorId)
+
+  // 목록을 지도상 위치 기준 왼쪽→오른쪽으로 정렬한다(x 오름차순, x가 같으면 위→아래).
+  // 관리자가 도면을 훑는 순서와 목록 순서가 일치해 어떤 목적지인지 찾기 쉽다.
+  // 위치가 아직 없는 목적지는 맨 뒤로 보낸다.
+  const orderedLandmarks = [...(landmarks ?? [])].sort((a, b) => {
+    const ax = a.x ?? Infinity
+    const bx = b.x ?? Infinity
+    if (ax !== bx) return ax - bx
+    return (a.y ?? Infinity) - (b.y ?? Infinity)
+  })
+
+  // 목록은 5개씩 나눠 보여준다.
+  const landmarkPage = usePagination(orderedLandmarks, 5)
 
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
@@ -264,7 +279,7 @@ export default function LandmarkPage() {
         {landmarksLoading && <AsyncState status="loading" />}
         {landmarksError && <AsyncState status="error" onRetry={() => refetchLandmarks()} />}
         <div className="grid gap-2 mt-3">
-          {!landmarksLoading && !landmarksError && landmarks?.map((l) => (
+          {!landmarksLoading && !landmarksError && landmarkPage.pageItems.map((l) => (
             <div key={l.id} className="flex items-center justify-between p-3 border border-line rounded-lg">
               <div className="flex items-center gap-3">
                 <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: LANDMARK_COLOR }} />
@@ -294,6 +309,9 @@ export default function LandmarkPage() {
           ))}
           {landmarks && landmarks.length === 0 && <AsyncState status="empty" title="등록된 목적지가 없습니다." />}
         </div>
+        {!landmarksLoading && !landmarksError && (
+          <Pagination page={landmarkPage.page} pageCount={landmarkPage.pageCount} onChange={landmarkPage.setPage} />
+        )}
       </Card>
 
       <StepFooter buildingId={buildingId} floorId={floorId} current="landmarks" />

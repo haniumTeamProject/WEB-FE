@@ -4,7 +4,7 @@ import { useBuildings } from '@/features/buildings/hooks'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
-import { FLOOR_STATUS_BADGE } from '@/lib/constants'
+import { floorStatusBadge } from '@/lib/constants'
 import { AsyncState } from '@/components/ui/AsyncState'
 
 function StatCard({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
@@ -61,10 +61,10 @@ export default function DashboardPage() {
                 style={{
                   fontSize: 13,
                   fontWeight: 600,
-                  color: b.status ? FLOOR_STATUS_BADGE[b.status].fg : '#8C99B3',
+                  color: floorStatusBadge(b.status).fg,
                 }}
               >
-                {b.status ? FLOOR_STATUS_BADGE[b.status].label : '—'}
+                {floorStatusBadge(b.status).label}
               </span>
             </Card>
           </Link>
