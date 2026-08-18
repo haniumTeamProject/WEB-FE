@@ -44,12 +44,12 @@ export default function BeaconListPage() {
   const update = useUpdateBeacon(floorId)
   const del = useDeleteBeacon(floorId)
 
-  // 의미비콘은 왼쪽, 보강비콘은 오른쪽 열로 나눠 각각 10개씩 페이지네이션한다.
+  // 의미비콘은 왼쪽, 보강비콘은 오른쪽 열로 나눠 각각 5개씩 페이지네이션한다.
   // (한 줄로 쭉 나열하면 세로로만 길어져 가로 공간이 낭비된다.)
   const semanticBeacons = (beacons ?? []).filter((b) => b.type === 'semantic')
   const reinforcementBeacons = (beacons ?? []).filter((b) => b.type === 'reinforcement')
-  const semanticPage = usePagination(semanticBeacons, 10)
-  const reinforcementPage = usePagination(reinforcementBeacons, 10)
+  const semanticPage = usePagination(semanticBeacons, 5)
+  const reinforcementPage = usePagination(reinforcementBeacons, 5)
 
   // 작성 중이던 폼은 층별 초안으로 복원한다. 축척을 설정하러 다른 화면에 다녀와도
   // 이름·MAC·minor·찍어둔 위치를 잃지 않고 이어서 등록할 수 있게 한다.
