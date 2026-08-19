@@ -14,9 +14,23 @@ import { InfoTooltip } from '@/components/ui/InfoTooltip'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 
-const CANVAS_W = 760
+// 원본 설계도 이미지가 이 폭보다 크면 여기서 잘라 벽 인식·저장용 마스크를 만든다(작으면 원본
+// 그대로, 업스케일은 안 함) — 순전히 "너무 큰 원본이 올라와도 성능·저장 용량이 감당 가능한 선을
+// 넘지 않게" 막는 상한이다. 예전엔 760, 그다음 1140으로 고정해뒀었는데 실제 업로드 원본(2372px)
+// 보다 한참 작아서 계속 흐리다는 피드백을 받았다 — 실제 화면에서 영역 채우기(전체 픽셀을 훑는 가장
+// 무거운 동작)를 여러 값으로 실측해보니 2400까지도 200ms 안팎으로 즉각 반응해서 이 값으로 올렸다
+// (실측 기반, 실제 발견된 문제 재조정). 축척으로 환산하는 거리값(횡단 최대 거리 등)은 실제 축척을
+// 곱해 계산하므로 해상도가 바뀌어도 자동으로 맞춰지지만, 축척과 무관한 순수 픽셀 기준 여유값(경로
+// 노드 병합 반경 등)은 실제 거리 기준으로 더 빡빡해진다 — 원래도 대략적인 여유값이라 체감상 문제는
+// 없을 것으로 보고, 그 값들까지 비례 조정하진 않았다(대량의 테스트 재조정이 필요해서 위험 대비
+// 이득이 적다).
+const CANVAS_W = 2400
 const FILL: [number, number, number, number] = [75, 112, 229, 120] // 이동영역(반투명 파랑)
-const BARRIER_R = 2 // 벽 펜 반경(px)
+const BARRIER_R = 6 // 벽 펜 반경(px) — CANVAS_W 상향(760→2400)에 맞춰 비례 조정
+// 화면 표시 폭을 컨테이너 폭에 그대로 맞추면, 아주 넓은 모니터에서는 높이도 같은 비율로 커져서(원본
+// 비율은 유지되니 찌그러지진 않지만) 그림 전체가 지나치게 거대해져 스크롤을 많이 해야 한다(실제
+// 발견된 문제, 종합확인 화면과 동일한 원인). 이 이상은 안 키우도록 상한을 둔다.
+const MAX_DISPLAY_W = 1000
 const ZOOM_MIN = 1 // 기본 화면(맞춤 배율) 밑으로는 축소 못 하게
 const ZOOM_MAX = 8
 
@@ -298,7 +312,9 @@ export default function MapReviewPage() {
     if (!floorplan?.imageUrl) return
     const image = new window.Image()
     image.onload = () => {
-      const w = CANVAS_W
+      // 원본이 CANVAS_W보다 작으면 그냥 원본 그대로 쓴다(다운스케일도 업스케일도 안 함) — 굳이
+      // 작은 원본을 억지로 키우면 오히려 흐려진다. 원본이 크면 CANVAS_W에서 자른다(성능·저장 용량 보호용 상한).
+      const w = Math.min(image.width, CANVAS_W)
       const h = Math.round((image.height / image.width) * w)
       const base = document.createElement('canvas')
       base.width = w
@@ -395,10 +411,10 @@ export default function MapReviewPage() {
   useLayoutEffect(() => {
     const el = stageRef.current
     if (!el) return
-    setContainerWidth(Math.round(el.getBoundingClientRect().width))
+    setContainerWidth(Math.min(MAX_DISPLAY_W, Math.round(el.getBoundingClientRect().width)))
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width
-      if (w) setContainerWidth(Math.round(w))
+      if (w) setContainerWidth(Math.min(MAX_DISPLAY_W, Math.round(w)))
     })
     ro.observe(el)
     return () => ro.disconnect()

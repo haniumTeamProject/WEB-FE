@@ -19,6 +19,10 @@ import { StepFooter } from '@/components/layout/StepNav'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 6
+// 캔버스 폭을 컨테이너 폭에 그대로 맞추면, 화면이 아주 넓은 모니터에서는 높이도 같은 비율로 커져서
+// (원본 비율은 항상 지켜지므로 찌그러지진 않지만) 그림 전체가 지나치게 거대해져 스크롤을 많이 해야
+// 한다(팀원 실제 발견). 이 이상은 안 키우도록 상한을 둔다.
+const MAX_CANVAS_W = 1000
 // 목적지 관리 화면(LandmarkPage)의 LANDMARK_COLOR(파랑)은 의미비콘과 같은 색이라 이 화면에서는 서로
 // 겹쳐 구분이 안 된다 — 경로노드 페이지에서 "목적지 출입구"에 쓰는 주황색으로 이 화면에서만 맞춘다.
 const OVERVIEW_LANDMARK_COLOR = '#f2992e'
@@ -57,10 +61,10 @@ export default function FloorOverviewPage() {
   useLayoutEffect(() => {
     const el = containerRef.current
     if (!el) return
-    setWidth(Math.round(el.getBoundingClientRect().width))
+    setWidth(Math.min(MAX_CANVAS_W, Math.round(el.getBoundingClientRect().width)))
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width
-      if (w) setWidth(Math.round(w))
+      if (w) setWidth(Math.min(MAX_CANVAS_W, Math.round(w)))
     })
     ro.observe(el)
     return () => ro.disconnect()

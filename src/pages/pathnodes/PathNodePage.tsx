@@ -23,6 +23,10 @@ import { StepFooter } from '@/components/layout/StepNav'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const DESIGN_W = 900 // 비콘/랜드마크 좌표 기준 폭 — FloorMapCanvas.DESIGN_W와 동일
+// 캔버스 폭을 컨테이너 폭에 그대로 맞추면 아주 넓은 모니터에서는 높이도 같이 커져서(비율은 유지되니
+// 찌그러지진 않지만) 전체가 지나치게 거대해진다(실제 발견된 문제, 종합확인 화면과 동일한 원인) —
+// 이 이상은 안 키우도록 상한을 둔다.
+const MAX_CANVAS_W = 1000
 
 const DEFAULT_CROSSING_MAX_M = 3 // 축척 미설정 시 기본 횡단 가능 거리(대략 60px 상당)
 const MIN_CORNER_CLEARANCE_M = 0.3 // 코너 횡단 좌우 최소 여유 — 이보다 벽이 가까우면 벽을 타는 걸로 보고 안 만든다
@@ -72,10 +76,10 @@ export default function PathNodePage() {
   useLayoutEffect(() => {
     const el = containerRef.current
     if (!el) return
-    setWidth(Math.round(el.getBoundingClientRect().width))
+    setWidth(Math.min(MAX_CANVAS_W, Math.round(el.getBoundingClientRect().width)))
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width
-      if (w) setWidth(Math.round(w))
+      if (w) setWidth(Math.min(MAX_CANVAS_W, Math.round(w)))
     })
     ro.observe(el)
     return () => ro.disconnect()
