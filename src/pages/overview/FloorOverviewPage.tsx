@@ -98,6 +98,10 @@ export default function FloorOverviewPage() {
   }
 
   const H = displayImg ? Math.round((displayImg.height / displayImg.width) * width) : 0
+  // 노드 반지름·선 굵기는 X/zoom(줌으로 확대/축소해도 화면 크기 고정)뿐 아니라 X*scale/zoom로 이
+  // scale도 곱해야 한다 — 벽선·설계도 이미지는 컨테이너 폭이 넓어지면 같이 커지는데, scale 없이
+  // zoom만 반영하면 마커는 화면 픽셀 기준으로 고정돼서 창을 키울수록 지도만 커지고 마커는 그대로라
+  // 상대적으로 점점 작아 보인다(실제 발견된 문제).
   const scale = width / DESIGN_W
   // 경로노드는 설계도(900) 좌표가 아니라 저장 당시 마스크 픽셀 좌표라, 같은 화면에 겹치려면 그 비율만큼
   // 설계도 좌표계로 환산해야 한다(PathNodePage가 반대 방향으로 하는 변환의 역).
@@ -188,16 +192,16 @@ export default function FloorOverviewPage() {
                       <Line
                         points={[ax, ay, bx, by]}
                         stroke={isCross ? '#16a34a' : '#7c3aed'}
-                        strokeWidth={(isCross ? 1.6 : 1) / zoom}
-                        dash={isCross ? [4 / zoom, 3 / zoom] : undefined}
+                        strokeWidth={((isCross ? 1.6 : 1) * scale) / zoom}
+                        dash={isCross ? [(4 * scale) / zoom, (3 * scale) / zoom] : undefined}
                       />
                       {isCross && (
                         <Line
-                          points={arrowheadPoints(ax, ay, bx, by, Math.min(11 / zoom, Math.hypot(bx - ax, by - ay) * 0.4))}
+                          points={arrowheadPoints(ax, ay, bx, by, Math.min((11 * scale) / zoom, Math.hypot(bx - ax, by - ay) * 0.4))}
                           closed
                           fill="#16a34a"
                           stroke="#ffffff"
-                          strokeWidth={1.1 / zoom}
+                          strokeWidth={(1.1 * scale) / zoom}
                         />
                       )}
                     </Fragment>
@@ -215,10 +219,10 @@ export default function FloorOverviewPage() {
                       key={node.id}
                       x={node.x * pathNodeToDesign * scale}
                       y={node.y * pathNodeToDesign * scale}
-                      radius={5 / zoom}
+                      radius={(5 * scale) / zoom}
                       fill={node.type === 'facing' ? undefined : pathNodeColor(node)}
                       stroke={node.type === 'facing' ? pathNodeColor(node) : '#fff'}
-                      strokeWidth={1.2 / zoom}
+                      strokeWidth={(1.2 * scale) / zoom}
                     />
                   ))}
               </Layer>
@@ -229,7 +233,17 @@ export default function FloorOverviewPage() {
                 relevantConnectors.map((c) => {
                   const pos = c.positions?.find((p) => p.floorId === floorId)
                   if (!pos) return null
-                  return <Circle key={c.id} x={pos.x * scale} y={pos.y * scale} radius={6 / zoom} fill={CONNECTOR_COLOR} stroke="#fff" strokeWidth={1.4 / zoom} />
+                  return (
+                    <Circle
+                      key={c.id}
+                      x={pos.x * scale}
+                      y={pos.y * scale}
+                      radius={(6 * scale) / zoom}
+                      fill={CONNECTOR_COLOR}
+                      stroke="#fff"
+                      strokeWidth={(1.4 * scale) / zoom}
+                    />
+                  )
                 })}
               {showLandmarks &&
                 (landmarks ?? [])
@@ -239,10 +253,10 @@ export default function FloorOverviewPage() {
                       key={l.id}
                       x={(l.x as number) * scale}
                       y={(l.y as number) * scale}
-                      radius={6 / zoom}
+                      radius={(6 * scale) / zoom}
                       fill={OVERVIEW_LANDMARK_COLOR}
                       stroke="#fff"
-                      strokeWidth={1.4 / zoom}
+                      strokeWidth={(1.4 * scale) / zoom}
                     />
                   ))}
               {showBeacons &&
@@ -258,10 +272,10 @@ export default function FloorOverviewPage() {
                       x={(b.x as number) * scale}
                       y={(b.y as number) * scale}
                       sides={4}
-                      radius={6.5 / zoom}
+                      radius={(6.5 * scale) / zoom}
                       fill={BEACON_TYPE_COLOR[b.type]}
                       stroke="#fff"
-                      strokeWidth={1.2 / zoom}
+                      strokeWidth={(1.2 * scale) / zoom}
                     />
                   ))}
             </Layer>
