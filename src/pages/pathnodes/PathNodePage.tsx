@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
-import { useMask, useScale } from '@/features/mapEditor/hooks'
+import { useMask, usePathNodes, useSavePathNodes, useScale } from '@/features/mapEditor/hooks'
 import { useConnectors } from '@/features/connectors/hooks'
 import { useLandmarks } from '@/features/landmarks/hooks'
 import { generatePathNodes } from '@/features/mapEditor/pathNodes'
@@ -48,7 +48,9 @@ function decodeMask(dataUrl: string, w: number, h: number): Promise<Uint8Array> 
 }
 
 // 지도 검수에서 저장된 통행 영역 + 비콘/목적지 입구로 경로노드를 생성하고, 점을 드래그해 수정할 수 있는 마지막 단계.
-// 지도 검수 단계와 분리된 별도 페이지 — 이동 결과는 층 ID 기준 localStorage에 저장(백엔드 저장은 추후 작업).
+// 지도 검수 단계와 분리된 별도 페이지 — 편집 중에는 새로고침에 대비해 층 ID 기준 localStorage에도
+// 임시로 남기지만, 실제 저장소는 서버다: '저장' 버튼을 눌러야 GET/PUT /floors/:floorId/path-nodes로
+// DB에 반영되고, 다음에 들어올 때는(다른 브라우저·다른 관리자여도) 그 저장된 값을 최우선으로 불러온다.
 export default function PathNodePage() {
   const { buildingId = '', floorId = '' } = useParams()
   const navigate = useNavigate()
@@ -60,6 +62,8 @@ export default function PathNodePage() {
   const { data: savedScale } = useScale(floorId)
   const { data: connectors } = useConnectors(buildingId)
   const { data: landmarks } = useLandmarks(floorId)
+  const { data: savedPathNodes } = usePathNodes(floorId)
+  const savePathNodesMutation = useSavePathNodes(floorId)
   const [crossingMaxM, setCrossingMaxM] = useState(String(DEFAULT_CROSSING_MAX_M))
   const [minClearanceM, setMinClearanceM] = useState(String(MIN_CORNER_CLEARANCE_M))
 
@@ -209,8 +213,16 @@ export default function PathNodePage() {
   async function onGenerate() {
     if (!savedMask?.dataUrl) return
     // 화면에 아직 아무것도 안 띄운 첫 클릭이고 이전에 저장해둔 게 있으면, 새로 만들지 않고
-    // 그 수정물을 그대로 불러온다 — 드래그로 고친 위치가 날아가지 않게.
+    // 그 수정물을 그대로 불러온다 — 드래그로 고친 위치가 날아가지 않게. 서버에 저장된 값이 최우선(다른
+    // 브라우저·다른 관리자가 저장한 것도 포함)이고, 서버에 아직 아무것도 없을 때만 이 브라우저에 남은
+    // localStorage 임시 초안(저장 버튼을 안 누르고 나간 경우 등)을 대신 불러온다.
     if (nodes.length === 0 && edges.length === 0) {
+      if (savedPathNodes) {
+        setNodes(savedPathNodes.nodes)
+        setEdges(savedPathNodes.edges)
+        setMaskDims({ w: savedPathNodes.maskW, h: savedPathNodes.maskH })
+        return
+      }
       const stored = readStoredPathNodes(floorId)
       if (stored) {
         setNodes(stored.nodes)
@@ -825,10 +837,19 @@ export default function PathNodePage() {
         description="지금까지 배치한 경로노드로 이 층의 세팅이 마무리됩니다. 이후에도 이 화면에서 다시 수정할 수 있습니다."
         confirmLabel="저장"
         confirmVariant="primary"
+        pending={savePathNodesMutation.isPending}
         onCancel={() => setConfirmSaveOpen(false)}
         onConfirm={() => {
-          setConfirmSaveOpen(false)
-          navigate(`/buildings/${buildingId}`)
+          if (!maskDims) return
+          savePathNodesMutation.mutate(
+            { nodes, edges, maskW: maskDims.w, maskH: maskDims.h },
+            {
+              onSuccess: () => {
+                setConfirmSaveOpen(false)
+                navigate(`/buildings/${buildingId}`)
+              },
+            },
+          )
         }}
       />
     </div>

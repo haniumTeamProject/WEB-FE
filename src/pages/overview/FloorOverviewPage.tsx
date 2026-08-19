@@ -1,15 +1,14 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { Stage, Layer, Image as KonvaImage, Circle, Line, RegularPolygon } from 'react-konva'
 import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
-import { useMask } from '@/features/mapEditor/hooks'
+import { useMask, usePathNodes } from '@/features/mapEditor/hooks'
 import { useBeacons } from '@/features/beacons/hooks'
 import { useLandmarks } from '@/features/landmarks/hooks'
 import { useConnectors } from '@/features/connectors/hooks'
-import { readStoredPathNodes } from '@/features/mapEditor/pathNodesStorage'
 import { pathNodeColor } from '@/features/mapEditor/pathNodeColors'
 import { arrowheadPoints } from '@/lib/canvasArrows'
 import { BEACON_TYPE_COLOR, BEACON_TYPE_LABEL, CONNECTOR_COLOR, MAP_DESIGN_W as DESIGN_W } from '@/lib/constants'
@@ -37,7 +36,9 @@ export default function FloorOverviewPage() {
   const { data: landmarks } = useLandmarks(floorId)
   const { data: connectors } = useConnectors(buildingId)
 
-  const stored = useMemo(() => readStoredPathNodes(floorId), [floorId])
+  // 경로노드 화면과 항상 같은 값을 보도록(다른 브라우저·다른 관리자가 저장한 것도 포함), localStorage가
+  // 아니라 서버에 저장된 값을 그대로 쓴다.
+  const { data: stored } = usePathNodes(floorId)
 
   const [showMask, setShowMask] = useState(true)
   const [showBeacons, setShowBeacons] = useState(true)
