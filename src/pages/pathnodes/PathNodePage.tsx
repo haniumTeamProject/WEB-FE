@@ -494,6 +494,11 @@ export default function PathNodePage() {
             style={{ cursor: 'grab' }}
           >
             {maskDims && (
+              // 캔버스 폭에 상한(MAX_CANVAS_W)을 두면서 컨테이너는 그보다 넓을 수 있게 됐다 — 가운데
+              // 정렬 없이 두면 오른쪽에 빈 공간만 남고 캔버스가 왼쪽에 붙어 보인다(실제 발견된 문제).
+              // Stage에 style prop을 직접 줘도 Konva가 wrapper div의 style을 자체적으로 다시 써버려서
+              // 안 먹는다 — 대신 순수 div로 감싸서 그 div를 가운데 정렬한다.
+              <div style={{ width, margin: '0 auto' }}>
               <Stage
                 ref={stageRef}
                 width={width}
@@ -616,6 +621,7 @@ export default function PathNodePage() {
                   })}
                 </Layer>
               </Stage>
+              </div>
             )}
             {!maskDims && (
               <div className="text-muted text-sm flex items-center justify-center" style={{ height: 300 }}>

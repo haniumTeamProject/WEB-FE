@@ -756,6 +756,9 @@ export default function MapReviewPage() {
             }}
           >
             {dims && (
+              // 캔버스 폭에 상한(MAX_DISPLAY_W)을 두면서 이 박스(stageRef)는 그보다 넓을 수 있게
+              // 됐다 — margin: 0 auto 없이 두면 오른쪽에 빈 공간만 남고 캔버스가 왼쪽에 붙어 보인다
+              // (실제 발견된 문제). transform(pan/zoom)은 레이아웃과 무관해 margin과 안 부딪힌다.
               <canvas
                 ref={canvasRef}
                 width={dims.w}
@@ -767,6 +770,7 @@ export default function MapReviewPage() {
                 onMouseLeave={onMouseUp}
                 style={{
                   display: 'block',
+                  margin: '0 auto',
                   width: dims.w * fitScale,
                   height: dims.h * fitScale,
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
