@@ -124,6 +124,22 @@ describe('findAdjacentPairs', () => {
     const pairs = findAdjacentPairs(points, w, h, walkable, 1)
     expect(hasPair(pairs, 'A', 'B')).toBe(false)
   })
+
+  it('가운데 장애물을 사이에 두고 도는 두 평행한 경로는 둘 다 이어진다(실제 발견된 문제: 위쪽엔 생기고 아래쪽엔 안 생김)', () => {
+    const w = 50
+    const h = 30
+    // 가운데 사각형 장애물(계단실) 하나를 빼고 나머진 전부 통행 가능 — 위/아래로 도는 고리형 복도.
+    const walkable = buildMask(w, h, (x, y) => !(x >= 15 && x < 35 && y >= 10 && y < 20))
+    const points: P[] = [
+      { id: '1', x: 10, y: 5, component: 0 }, // 위쪽 왼편
+      { id: '8', x: 40, y: 5, component: 0 }, // 위쪽 오른편
+      { id: '4', x: 10, y: 25, component: 0 }, // 아래쪽 왼편
+      { id: '7', x: 40, y: 25, component: 0 }, // 아래쪽 오른편 — 1-8과 거리가 같음
+    ]
+    const pairs = findAdjacentPairs(points, w, h, walkable, 1)
+    expect(hasPair(pairs, '1', '8')).toBe(true)
+    expect(hasPair(pairs, '4', '7')).toBe(true)
+  })
 })
 
 describe('dedupeClosePlanItems', () => {

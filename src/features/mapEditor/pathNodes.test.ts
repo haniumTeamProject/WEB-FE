@@ -419,18 +419,20 @@ describe('generatePathNodes corner crossing', () => {
     // 실제 사례: 입구가 쏜 맞은편 지점이, 우연히 어떤 concave 코너가 쏜 맞은편 지점과 같은 위치(축까지
     // 일치)에 겹칠 수 있다. 이 지점은 이제 "코너의 맞은편"이기도 하므로 특정 입구 하나의 색(pairKind)
     // 으로 칠하면 안 된다 — pairKind가 지워져서 코너 맞은편처럼(화면에서는 보라색으로) 표시돼야 한다.
-    const W = 100
+    // 입구는 어느 벽에서도 WALL_SPLICE_MAX_PX(30px)보다 멀어야(여기선 아래쪽 벽까지 50px) 자기 자신이
+    // 벽에 스냅되지 않고, 그래야 "입구 자신의 아래쪽 캐스팅"과 "노치 코너의 아래쪽 캐스팅"이 같은 지점
+    // (130,100)에서 독립적으로 만나 겹치는 이 테스트의 시나리오가 재현된다(둘 중 하나가 벽에 스냅되면
+    // 그 좌표가 바뀌어 더 이상 안 겹친다).
+    const W = 300
     const H = 100
     const mask = new Uint8Array(W * H)
     const rect = (x0: number, y0: number, x1: number, y1: number, val: number) => {
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[y * W + x] = val
     }
-    rect(0, 0, 100, 100, 1)
-    rect(30, 0, 40, 4, 0) // 위쪽 벽에서 살짝 파낸 노치 — concave 코너 2개를 만든다
+    rect(0, 0, 300, 100, 1)
+    rect(130, 0, 140, 4, 0) // 위쪽 벽에서 살짝 파낸 노치 — concave 코너 2개를 만든다
 
-    const entrance = { x: 30, y: 90, kind: 'landmark' as const }
-    // 입구(y=90)와 노치 코너(y≈4)는 86px 가까이 떨어져 있어, 이 테스트가 보려는 pairKind 병합 판정과
-    // 무관한 기본 횡단 거리 제한에 걸리지 않도록 넉넉한 값을 명시로 넘긴다.
+    const entrance = { x: 130, y: 50, kind: 'landmark' as const }
     const { nodes, edges } = generatePathNodes(mask, W, H, [entrance], 240)
     const byId = new Map(nodes.map((n) => [n.id, n]))
 
@@ -465,11 +467,10 @@ describe('generatePathNodes corner crossing', () => {
 })
 
 describe('generatePathNodes wall boundary tracing', () => {
-  it('does not splice a destination that sits right next to a wall into the main wall loop either (그 자리만 살짝 떠서 꺾이는 문제)', () => {
-    // 목적지가 벽에서 아주 가까워도(MERGE_RADIUS_PX 이내) 원래 찍힌 좌표 그대로 메인 벽 루프 순서
-    // 중간에 끼어들면, 양옆 코너와는 직선인데 그 지점만 살짝 벽에서 뜬 채로 꺾여 보인다 — 입구는
-    // 거리와 상관없이 항상 메인 루프 밖에서 연결선 하나로만 붙어야, 코너끼리 이어지는 벽선(양쪽 코너
-    // 사이)이 곧게 유지된다.
+  it('splices a destination near a wall into the main wall loop, snapped onto the line (실제 사용자 요청: 코너A-목적지-코너B로 곧게 쪼개져야 함)', () => {
+    // 목적지는 관리자가 지도를 보고 수동으로 찍는 거라 정밀하게 벽 위를 클릭하길 기대할 수 없다 —
+    // 벽에서 어느 정도(MAX_SNAP_PX 이내) 가까우면 벽 선 위로 스냅해서 꼭짓점으로 끼워 넣어야, 원래
+    // 코너A—코너B였던 직선이 코너A—목적지—코너B로 곧게 둘로 쪼개진다.
     const W = 100
     const H = 60
     const mask = new Uint8Array(W * H)
@@ -487,28 +488,46 @@ describe('generatePathNodes wall boundary tracing', () => {
     expect(topLeft).toBeTruthy()
     expect(topRight).toBeTruthy()
 
-    // 목적지 자신은 메인 루프에 안 끼고, 가장 가까운 경계점 하나에만 연결돼야 한다.
+    // 목적지 노드 자체가 벽 선 위(y=10)로 스냅돼야 한다 — 원래 찍은 y=12가 아니라.
     const landmark = nodes.find((n) => n.type === 'landmark')!
-    const landmarkWallEdges = edges.filter((e) => e.type === 'wall' && (e.a === landmark.id || e.b === landmark.id))
-    expect(landmarkWallEdges.length).toBe(1)
+    expect(landmark.x).toBe(50)
+    expect(landmark.y).toBe(10)
 
-    // 위쪽 두 코너 사이의 벽 엣지(목적지 자신의 연결선 제외)는 전부 y=10으로 곧게 이어져야 한다 —
-    // 중간에 맞은편 지점이 하나 더 끼더라도(목적지 바로 위 벽에 짧은 건너기가 생길 수 있음) 전부 같은
-    // y라 시각적으로는 여전히 하나의 직선으로 보인다.
-    const byId = new Map(nodes.map((n) => [n.id, n]))
-    const topWallEdges = edges.filter((e) => {
-      if (e.type !== 'wall' || e.a === landmark.id || e.b === landmark.id) return false
-      const a = byId.get(e.a)!
-      const b = byId.get(e.b)!
-      return a.y === 10 && b.y === 10
-    })
-    expect(topWallEdges.length).toBeGreaterThan(0)
-    for (const e of topWallEdges) {
-      const a = byId.get(e.a)!
-      const b = byId.get(e.b)!
-      expect(a.y).toBe(10)
-      expect(b.y).toBe(10)
+    // 양쪽 코너와 각각 곧은 벽 엣지로 이어져 메인 루프에 꼭짓점으로 낀다 — 하나로 뭉뚱그린 연결선이
+    // 아니라 코너A—목적지, 목적지—코너B로 정확히 둘로 쪼개져야 한다.
+    const landmarkWallEdges = edges.filter((e) => e.type === 'wall' && (e.a === landmark.id || e.b === landmark.id))
+    expect(landmarkWallEdges.length).toBe(2)
+    const other = (e: (typeof landmarkWallEdges)[number]) => (e.a === landmark.id ? e.b : e.a)
+    const connectedIds = landmarkWallEdges.map(other)
+    expect(connectedIds).toContain(topLeft!.id)
+    expect(connectedIds).toContain(topRight!.id)
+  })
+
+  it('merges a corner crossing-cast that lands on a wall-snapped destination, instead of stacking a duplicate node on it (실제 발견된 문제: 자기 자신을 가리키는 건너기처럼 보임)', () => {
+    // 목적지가 벽 선 위로 스냅되면(위 테스트) 그 자리는 코너와 다를 바 없는 "진짜 벽 위 지점"이 된다.
+    // 근처 concave 코너가 캐스팅한 맞은편 지점이 우연히 같은 좌표에 떨어지면, 별개의 노드로 겹쳐
+    // 쌓이지 않고 이미 있는 목적지 노드에 합쳐져야 한다 — 안 그러면 좌표가 완전히 같은 점이 두 개
+    // 생겨서 화면에서 "자기 자신을 가리키는 건너기"처럼 혼란스럽게 보인다.
+    const W = 100
+    const H = 100
+    const mask = new Uint8Array(W * H)
+    const rect = (x0: number, y0: number, x1: number, y1: number, val: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[y * W + x] = val
     }
+    rect(0, 0, 100, 100, 1)
+    rect(30, 0, 40, 4, 0) // 위쪽 벽 노치 — concave 코너(30,4)가 아래로 캐스팅하면 (30,100)에 닿는다
+
+    // 아래쪽 벽(y=100)에서 10px 이내라 스냅되고, x=30이라 노치 코너의 아래쪽 캐스팅과 같은 자리(30,100)에서 겹친다.
+    const entrance = { x: 30, y: 90, kind: 'landmark' as const }
+    const { nodes, edges } = generatePathNodes(mask, W, H, [entrance], 240)
+
+    const pointsAt30_100 = nodes.filter((n) => n.x === 30 && n.y === 100)
+    expect(pointsAt30_100).toHaveLength(1)
+    expect(pointsAt30_100[0].type).toBe('landmark')
+
+    const landmark = pointsAt30_100[0]
+    const crossToLandmark = edges.filter((e) => e.type === 'cross' && (e.a === landmark.id || e.b === landmark.id))
+    expect(crossToLandmark.length).toBeGreaterThan(0)
   })
 
   it('does not splice a destination deep inside a room into the wall boundary trace as if it sat on the wall (would draw a diagonal wall line through the room)', () => {
@@ -519,15 +538,15 @@ describe('generatePathNodes wall boundary tracing', () => {
     // 가장 가까운 경계점 하나에만 짧게 연결해야 한다(그 연결선 자체는 대각선이어도 괜찮다 —
     // 열린 방 안을 가로지르는 것뿐이라 안내상 문제없다. 문제는 그게 두 '경계' 점 사이에 끼어드는 것).
     const W = 200
-    const H = 100
+    const H = 160
     const mask = new Uint8Array(W * H)
     const rect = (x0: number, y0: number, x1: number, y1: number) => {
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[y * W + x] = 1
     }
-    rect(10, 10, 190, 90) // 큰 방 하나
+    rect(10, 10, 190, 150) // 큰 방 하나
 
-    // 왼쪽 위 코너(10,10)와 정렬 순서상 가까운 위치로 투영되지만, 실제 좌표는 방 안쪽 깊숙한(180,20)
-    const entrance = { x: 180, y: 20, kind: 'landmark' as const }
+    // 어느 벽에서도 MAX_SNAP_PX(스냅 판정 거리)보다 훨씬 먼, 방 정중앙 깊숙한 위치.
+    const entrance = { x: 100, y: 80, kind: 'landmark' as const }
     const { nodes, edges } = generatePathNodes(mask, W, H, [entrance])
     const byId = new Map(nodes.map((n) => [n.id, n]))
 

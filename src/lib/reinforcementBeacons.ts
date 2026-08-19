@@ -101,6 +101,29 @@ function isVisible(
   return blocked / (steps + 1) <= VISIBILITY_BLOCKED_TOLERANCE
 }
 
+// 트리(사이클 없는 그래프) 위에서 시작점→끝점까지 유일한 경로를 따라간 거리를 잰다. 못 찾으면 null.
+function treePathDistance(adj: Map<string, { to: string; dist: number }[]>, startId: string, endId: string): number | null {
+  if (startId === endId) return 0
+  const visited = new Set([startId])
+  const queue: [string, number][] = [[startId, 0]]
+  while (queue.length) {
+    const [id, dist] = queue.shift() as [string, number]
+    for (const edge of adj.get(id) ?? []) {
+      if (visited.has(edge.to)) continue
+      if (edge.to === endId) return dist + edge.dist
+      visited.add(edge.to)
+      queue.push([edge.to, dist + edge.dist])
+    }
+  }
+  return null
+}
+
+// MST로 이미 연결된 두 점이라도, 그 직선이 "MST 트리를 따라 도는 경로"보다 뚜렷하게(이 비율 이하로)
+// 짧으면 실제로는 다른 물리적 경로(예: 가운데 장애물을 사이에 두고 반대편으로 도는 평행한 복도)라고
+// 보고 별도로 추가한다. 촘촘한 구역의 중복 후보는 MST 경로랑 직선 거리가 거의 같아서(=거의 같은
+// 경로) 이 기준에 안 걸리므로, 예전에 고친 "너무 많이 생기는" 문제는 재발하지 않는다.
+const PARALLEL_ROUTE_RATIO = 0.9
+
 // 같은 컴포넌트(방·복도) 안에서 의미비콘들을 잇는 최소 신장 트리(MST)를 구한다. 비콘이 N개면 항상
 // 정확히 N-1개(또는 그 이하, 가시선 그래프가 끊긴 경우)의 간선만 생긴다 — 그래프가 아니라 트리라서,
 // 촘촘한 구역에서 "서로 가시선 닿는 쌍을 전부" 이어버려 보강비콘이 여러 겹으로 겹쳐 생기는 문제가
@@ -109,6 +132,12 @@ function isVisible(
 // 곳은 한쪽만 이어지고 나머지가 통째로 빠지는 문제가 있었다 — MST는 별 모양 위상에서도(중심에서
 // 갈라지는 게 가장 싼 트리이므로) 모든 방향이 자연스럽게 이어진다. 후보 간선은 가시선(벽을 안
 // 가로지름)이 있는 쌍으로만 제한한다.
+//
+// 다만 MST는 "연결"만 보장하지 "실제로 사람이 걸어 다니는 모든 경로"를 다 보장하진 않는다 — 가운데
+// 장애물(계단실 등)을 사이에 두고 위/아래로 도는 두 평행한 경로가 있으면, 둘 다 필요한데도 MST는
+// 그래프 연결에 하나면 충분하다고 보고 한쪽만 남긴다(실제 발견된 문제: 위쪽엔 생기고 아래쪽 대칭
+// 경로엔 안 생김). 그래서 MST를 만든 뒤, MST에서 탈락한 후보 중 "MST 경로를 도는 것보다 뚜렷하게
+// 짧은" 것들은 별도의 평행 경로로 보고 다시 추가한다.
 export function findAdjacentPairs<T extends { id: string; x: number; y: number; component: number }>(
   points: T[],
   w: number,
@@ -144,12 +173,28 @@ export function findAdjacentPairs<T extends { id: string; x: number; y: number; 
       parent.set(id, root)
       return root
     }
-    for (const { a, b } of candidates) {
+    const treeAdj = new Map<string, { to: string; dist: number }[]>()
+    for (const p of group) treeAdj.set(p.id, [])
+    const rejected: { a: T; b: T; dist: number }[] = []
+    for (const cand of candidates) {
+      const { a, b, dist } = cand
       const rootA = find(a.id)
       const rootB = find(b.id)
-      if (rootA === rootB) continue
+      if (rootA === rootB) {
+        rejected.push(cand)
+        continue
+      }
       parent.set(rootA, rootB)
       result.push([a, b])
+      treeAdj.get(a.id)!.push({ to: b.id, dist })
+      treeAdj.get(b.id)!.push({ to: a.id, dist })
+    }
+
+    for (const { a, b, dist } of rejected) {
+      const viaTree = treePathDistance(treeAdj, a.id, b.id)
+      if (viaTree != null && dist < viaTree * PARALLEL_ROUTE_RATIO) {
+        result.push([a, b])
+      }
     }
   }
   return result

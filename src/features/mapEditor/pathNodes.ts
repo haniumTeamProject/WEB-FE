@@ -298,6 +298,7 @@ function cardinalFacingPoints(
     if (!hit) continue
     const distance = Math.hypot(hit[0] - point[0], hit[1] - point[1])
     if (distance > crossingMaxPx) continue
+    if (distance < MIN_CROSSING_LENGTH_PX) continue
     if (minClearancePx !== undefined && hugsWallAlongPath(mask, w, h, point, dir, hit, minClearancePx)) continue
     results.push(hit)
   }
@@ -314,6 +315,20 @@ const MIN_COMPONENT_PIXELS = 25
 const SIMPLIFY_EPSILON_PX = 3
 const MAX_SNAP_PX = 50
 const MERGE_RADIUS_PX = 6
+// 입구(목적지/연결자)가 벽 선에서 이 거리 안이면 벽 위로 스냅해서 메인 벽 순서에 꼭짓점으로 끼워
+// 넣는다(코너A—목적지—코너B로 곧게 쪼개짐). MAX_SNAP_PX(입구를 아예 이 컴포넌트에 배정할지 보는,
+// 훨씬 관대한 판정)와는 다른 용도라 별도 상수로 둔다 — 둘을 같은 값으로 쓰면, 배정은 되지만 스냅은
+// 안 되길 원하는 "적당히 먼" 입구를 표현할 방법이 없어진다.
+const WALL_SPLICE_MAX_PX = 30
+// 코너가 이미 어느 방향으론가 벽에 거의 붙어있으면(예: 마스크가 손으로 채워져서 코너 바로 위 1px만
+// 살짝 떨어진 경우) 그 방향의 "횡단 거리"가 거의 0이 된다. 이런 사실상 무의미한 초단거리 후보를
+// 걸러내지 않으면 두 가지 문제가 생긴다: (1) snapFacingPointToWall이 벽 선에 맞추다 원점과 완전히
+// 같은 좌표로 당겨버려 "자기 자신을 가리키는" 건너기가 생기고(실제 발견된 문제), (2) 이 초단거리
+// 값이 SIMILAR_LENGTH_RATIO 비교의 기준(가장 짧은 거리)이 돼서, 실제로 필요한 더 긴(하지만 훨씬 더
+// 타당한) 방향들이 전부 "기준보다 훨씬 길다"며 걸러져 코너에 건너기가 하나도 안 남는 문제가 생긴다
+// (역시 실제 발견된 문제). 정상적인 좁은 복도 폭(몇 px)까지 걸러내면 안 되므로, 그보다 훨씬 작은
+// "사실상 0"에 해당하는 값만 잡아낸다.
+const MIN_CROSSING_LENGTH_PX = 2
 // 축척이 아직 없을 때(호출부에서 crossingMaxPx를 안 넘겼을 때)의 기본값 — PathNodePage의
 // DEFAULT_CROSSING_MAX_M(3m)과 같은 20px/m 비율로 환산.
 const DEFAULT_CROSSING_MAX_PX = 60
@@ -423,12 +438,26 @@ export function generatePathNodes(
       exclude?: LoopEntry | LoopEntry[],
       axisLock?: { axis: 0 | 1; value: number },
       blockMergeIntoKinds?: NodeKind[],
+      // 입구(connector/landmark)가 벽 선분 위로 스냅됐을 때, 기존 코너와 병합되지 않고 새로 생기는
+      // 경우에도 벽 순서(메인 루프) 안에 꼭짓점으로 끼워 넣으라는 표시 — 관리자가 수동으로 찍는
+      // 목적지라 위치 정밀도가 중요하지 않으니, 벽에 어느 정도 가까우면 벽 선 위로 당겨서 "코너A—
+      // 목적지—코너B"처럼 직선이 깔끔하게 둘로 쪼개지길 원한다는 요청에 따른 것(실제 사용자 요청).
+      forceWallVertex?: boolean,
     ): LoopEntry {
       const excludeList = exclude ? (Array.isArray(exclude) ? exclude : [exclude]) : []
       const existing = entries.find(
         (entry) =>
           !excludeList.includes(entry) &&
-          !blockMergeIntoKinds?.includes(entry.kind) &&
+          // blockMergeIntoKinds는 "벽에서 뜬 채로 원래 좌표를 쓰는" connector/landmark에 흡수되는 걸
+          // 막으려는 규칙이다. 예외는 딱 하나 — 지금 넣으려는 게 맞은편(facing) 지점이고, 기존 항목이
+          // 이미 벽 선 위로 스냅돼 꼭짓점으로 낀(isWallVertex) connector/landmark인 경우다. 이런 경우는
+          // 사실상 코너와 다를 바 없는 "진짜 벽 위 지점"이라, 우연히 같은 자리로 캐스팅이 겹치면 코너와
+          // 겹칠 때처럼 그냥 병합돼야 한다 — 안 그러면 좌표가 완전히 같은 점이 두 개(입구 자신 + 이
+          // 지점을 가리키는 별개의 맞은편 노드) 겹쳐 생겨서, 화면에서 "자기 자신을 가리키는 건너기"처럼
+          // 혼란스럽게 보인다(실제 발견된 문제). 반대로 지금 넣으려는 게 새 입구(connector/landmark)
+          // 자신이면 이 예외를 적용하면 안 된다 — 안 그러면 벽 근처에 있는 서로 다른 두 목적지가 같은
+          // 벽 스냅 지점으로 몰려 하나로 합쳐져 버린다(예전에 고친 문제의 재발).
+          !(blockMergeIntoKinds?.includes(entry.kind) && !(kind === 'facing' && entry.isWallVertex)) &&
           Math.hypot(entry.point[0] - point[0], entry.point[1] - point[1]) <= MERGE_RADIUS_PX &&
           (!axisLock || entry.point[axisLock.axis] === axisLock.value),
       )
@@ -453,7 +482,7 @@ export function generatePathNodes(
         segmentIndex: nearest.segmentIndex,
         t: nearest.t,
         distanceToLoop: nearest.distance,
-        isWallVertex: kind === 'facing',
+        isWallVertex: kind === 'facing' || !!forceWallVertex,
       }
       entries.push(entry)
       return entry
@@ -474,13 +503,25 @@ export function generatePathNodes(
       // 있는 입구(방 안쪽 깊숙한 목적지 등)는 원래 좌표를 그대로 쓴다. 노드 위치(entranceEntry)와
       // 맞은편 탐색(cardinalFacingPoints)의 원점은 반드시 이거랑 똑같은 값을 써야 한다 — 서로 다른
       // 기준을 쓰면 건너기 엣지가 사선으로 그려지는 원인이 된다(실제로 발견된 버그).
+      //
+      // 스냅 판정 거리는 MERGE_RADIUS_PX(6px, "이미 있는 노드와 사실상 같은 자리"를 가리는 값)가 아니라
+      // 좀 더 넉넉한 WALL_SPLICE_MAX_PX를 쓴다 — 목적지는 관리자가 지도를 보고 수동으로 찍는 거라
+      // 정밀하게 벽 바로 위를 클릭하길 기대할 수 없다(실제 요청: "정밀함이 떨어지니까 너무 떨어진
+      // 곳만 아니면 괜찮다"). 이 범위 안이면 벽 선 위로 당겨 붙이고 forceWallVertex로 메인 벽 순서에
+      // 꼭짓점으로 끼워 넣어서, 원래 코너A—코너B였던 직선이 코너A—목적지—코너B로 곧게 둘로 쪼개지게
+      // 한다.
       const wallProjection = nearestPointOnLoop(simplifiedLoop, rawOrigin)
-      const proposedOrigin: Point = wallProjection.distance <= MERGE_RADIUS_PX ? wallProjection.point : rawOrigin
-      const entranceEntry = findOrInsert(proposedOrigin, entrance.kind, undefined, undefined, undefined, [
-        'connector',
-        'landmark',
-        'facing',
-      ])
+      const onWallLine = wallProjection.distance <= WALL_SPLICE_MAX_PX
+      const proposedOrigin: Point = onWallLine ? wallProjection.point : rawOrigin
+      const entranceEntry = findOrInsert(
+        proposedOrigin,
+        entrance.kind,
+        undefined,
+        undefined,
+        undefined,
+        ['connector', 'landmark', 'facing'],
+        onWallLine,
+      )
       // 맞은편 탐색은 항상 노드의 최종 위치(entranceEntry.point)에서 한다 — 벽 위로 스냅하려던 좌표가
       // 마침 근처의 기존 코너와 병합되면(예: 코너 바로 옆) 노드는 그 코너의 원래 위치를 그대로 쓰는데,
       // 캐스팅은 병합 전 좌표에서 하면 노드 위치와 캐스팅 원점이 어긋나 건너기 엣지가 사선이 되거나
@@ -506,6 +547,11 @@ export function generatePathNodes(
         // 복도에서 위/아래 맞은편이 서로 가까워도 둘 다 살아남아야 한다 — 실제로 발견된 버그).
         const fixedAxis: 0 | 1 = facingRawCast[0] === facingOrigin[0] ? 0 : 1
         const facingRaw = snapFacingPointToWall(facingRawCast, simplifiedLoop, fixedAxis)
+        // snapFacingPointToWall이 벽 선에 맞추면서, 원점(입구)이 이미 벽 위 꼭짓점이거나 그 근처에 아주
+        // 짧은 벽 구간이 있으면 원점과 사실상 같은 자리로 당겨질 수 있다 — 그러면 길이가 0에 가까운
+        // 건너기가 생겨서 화면에서 "자기 자신을 가리키는" 것처럼 보인다(실제 발견된 문제). 의미 없는
+        // 초단거리 건너기는 그냥 버린다.
+        if (Math.hypot(facingRaw[0] - facingOrigin[0], facingRaw[1] - facingOrigin[1]) < MIN_CROSSING_LENGTH_PX) continue
         const axisLock: { axis: 0 | 1; value: number } = { axis: fixedAxis, value: facingRaw[fixedAxis] }
         const facingEntry = findOrInsert(
           facingRaw,
@@ -544,6 +590,11 @@ export function generatePathNodes(
         // 맞은편들과도 병합되지 않도록 제외한다(위 입구 쪽과 같은 이유).
         const fixedAxis: 0 | 1 = facingRawCast[0] === cornerEntry.point[0] ? 0 : 1
         const facingRaw = snapFacingPointToWall(facingRawCast, simplifiedLoop, fixedAxis)
+        // 입구 쪽과 같은 이유 — 벽선에 맞추다 원점(코너 자신)과 사실상 같은 자리로 당겨지면 길이 0에
+        // 가까운 건너기가 생겨 "자기 자신을 가리키는" 것처럼 보인다(실제 발견된 문제, 코너가 자기
+        // 위치 바로 옆의 아주 짧은 벽 구간으로 스냅될 때 발생). 의미 없는 초단거리 건너기는 버린다.
+        if (Math.hypot(facingRaw[0] - cornerEntry.point[0], facingRaw[1] - cornerEntry.point[1]) < MIN_CROSSING_LENGTH_PX)
+          continue
         const axisLock: { axis: 0 | 1; value: number } = { axis: fixedAxis, value: facingRaw[fixedAxis] }
         const facingEntry = findOrInsert(facingRaw, 'facing', undefined, [cornerEntry, ...facingEntriesSoFar], axisLock, [
           'connector',
@@ -580,14 +631,14 @@ export function generatePathNodes(
     // 벽선(폴리곤) 트레이싱은 실제로 경계 위(또는 아주 가까이)에 있는 점들끼리만 정렬 순서대로 이어야
     // 한다 — 목적지/연결자처럼 방 안쪽 깊숙이 찍힌 점이 segmentIndex/t 정렬 순서상 중간에 끼어들면,
     // 그 점의 실제 좌표(원래 찍힌 위치 그대로 씀)와 이웃 사이를 잇는 선이 방을 대각선으로 가로질러
-    // 버린다(실제로 발견된 버그). 입구(connector/landmark)만으로 새로 생긴 점(원래 코너와 병합되지
-    // 않은 경우)은 벽에 아무리 가깝게 찍혀 있어도 메인 벽 루프에는 절대 끼워 넣지 않는다 — 입구
-    // 좌표는 사용자가 찍은 원래 위치 그대로 써야 하는데, 그걸 직선으로 보정된 벽 순서 중간에 끼우면
-    // 그 지점만 살짝 벽에서 떠서 꺾여 보인다(실제 발견된 문제). 대신 항상 가장 가까운 경계 점 하나에만
-    // 짧게 연결한다. 반대로 입구가 원래 있던 코너와 병합된 경우(isWallVertex=true, kind만
-    // connector/landmark로 바뀜)는 실제로는 여전히 그 코너 자리이므로 메인 루프에서 빼면 안 된다 —
-    // 빼면 그 코너를 건너뛰고 양옆이 대각선으로 바로 이어져 버린다(실제 발견된 문제). 코너/맞은편
-    // (facing)은 원래부터 벽 위의 지점이라 그대로 메인 루프에 낀다.
+    // 버린다(실제로 발견된 버그). 입구(connector/landmark)가 벽에서 MAX_SNAP_PX보다 먼 경우(방 안쪽
+    // 깊숙한 목적지 등)만 원래 좌표를 그대로 쓰고 메인 벽 루프에서 뺀다 — 이런 점은 대신 가장 가까운
+    // 경계 점 하나에만 짧게 연결한다. 그 범위 안이면(대부분의 경우) forceWallVertex로 이미 벽 선 위
+    // 좌표로 스냅·삽입돼 있으므로(엔트런스 생성부 참고) 코너처럼 메인 루프에 낀다 — 직선이 코너A—
+    // 목적지—코너B로 곧게 둘로 쪼개지길 원한다는 요청에 따른 것(실제 사용자 요청). 입구가 원래 있던
+    // 코너와 병합된 경우(isWallVertex=true, kind만 connector/landmark로 바뀜)도 마찬가지로 여전히 그
+    // 코너 자리이므로 메인 루프에서 빼면 안 된다 — 빼면 그 코너를 건너뛰고 양옆이 대각선으로 바로
+    // 이어져 버린다(실제 발견된 문제). 코너/맞은편(facing)은 원래부터 벽 위의 지점이라 그대로 낀다.
     const isOnMainWallLoop = (entry: LoopEntry) => entry.isWallVertex && entry.distanceToLoop <= MERGE_RADIUS_PX
     const onLoopIndices = entries.map((entry, index) => (isOnMainWallLoop(entry) ? index : -1)).filter((i) => i !== -1)
     for (let i = 0; i < onLoopIndices.length; i++) {
