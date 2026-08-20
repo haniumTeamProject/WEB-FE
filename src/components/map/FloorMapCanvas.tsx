@@ -24,6 +24,11 @@ export interface MapPoint {
 
 const MIN_ZOOM = 1 // 기본 화면(맞춤 배율) 밑으로는 축소 못 하게
 const MAX_ZOOM = 6
+// 폭을 컨테이너에 그대로 맞추면(상한 없이) 아주 넓은 화면에서 세로 높이도 비례해 커지는데, 세로가
+// 뷰포트 높이 근처(스크롤바가 생겼다 안 생겼다 하는 경계)에 걸리면 "폭 측정 → 높이 변경 → 스크롤바
+// 유무 변경 → 가용 폭 변경 → 폭 재측정"이 무한 반복돼 화면이 확대/축소를 반복하며 흔들린다(실제
+// 발견된 문제, 지도검수·종합확인·경로노드에는 이미 있는 상한을 여기도 맞춘다).
+const MAX_CANVAS_W = 1000
 // 다른 비콘 정렬 스냅이 실제 화면에서 항상 비슷한 크기로 느껴지도록, 줌과 무관한 레이어 좌표 임계값을
 // 줌 배율로 나눠서 써서 "화면상 몇 px" 기준으로 맞춘다 — 그대로 고정값을 쓰면 기본 배율(줌 1)에서는
 // 마우스로 맞추기 힘들 만큼 좁고, 확대했을 땐 반대로 너무 헐렁해진다.
@@ -66,10 +71,10 @@ export function FloorMapCanvas({
     const el = containerRef.current
     if (!el) return
     // 마운트 시 즉시 한 번 동기 측정(깜빡임 방지) — 이후 크기 변화는 ResizeObserver가 반영
-    setWidth(Math.round(el.getBoundingClientRect().width))
+    setWidth(Math.min(MAX_CANVAS_W, Math.round(el.getBoundingClientRect().width)))
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width
-      if (w) setWidth(Math.round(w))
+      if (w) setWidth(Math.min(MAX_CANVAS_W, Math.round(w)))
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -168,11 +173,15 @@ export function FloorMapCanvas({
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full border border-line rounded-lg overflow-hidden bg-white"
-      style={{ cursor: onCanvasClick ? 'crosshair' : undefined }}
-    >
+    // 바깥(w-full)은 측정 전용 — 실제 가용 폭을 재는 기준이 캔버스 자기 자신의 렌더 크기에 좌우되면
+    // 안 된다(측정 대상과 렌더 대상이 같으면 자기참조 루프가 생긴다, 실제 발견된 문제의 원인). 안쪽
+    // 박스만 상한 폭으로 잡고 가운데 정렬한다 — 확대/축소 버튼·경고 배너 같은 절대위치 요소도 전부
+    // 이 안쪽 박스 기준으로 따라와서, Stage만 따로 좁혔을 때처럼 버튼이 지도에서 떨어져 보이지 않는다.
+    <div ref={containerRef} className="w-full">
+      <div
+        className="relative border border-line rounded-lg overflow-hidden bg-white mx-auto"
+        style={{ cursor: onCanvasClick ? 'crosshair' : undefined, width }}
+      >
       <Stage
         ref={stageRef}
         width={width}
@@ -376,6 +385,7 @@ export function FloorMapCanvas({
           지도 검수에서 통행영역을 다시 확인/저장해주세요.
         </div>
       )}
+      </div>
     </div>
   )
 }
