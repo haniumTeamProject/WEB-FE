@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generatePathNodes } from './pathNodes'
+import { generatePathNodes, snapEntrancesToWalls } from './pathNodes'
 
 describe('generatePathNodes entrance facing (상하좌우 4방향)', () => {
   it('finds the facing point across the corridor by casting straight down from the entrance', () => {
@@ -631,5 +631,56 @@ describe('generatePathNodes wall boundary tracing', () => {
     const cross =
       (facing.x - topCorner.x) * (bottomCorner.y - topCorner.y) - (facing.y - topCorner.y) * (bottomCorner.x - topCorner.x)
     expect(cross).toBeCloseTo(0, 6)
+  })
+})
+
+describe('snapEntrancesToWalls', () => {
+  it('벽에서 WALL_SPLICE_MAX_PX(30px) 이내인 점은 벽 선 위로 스냅한다', () => {
+    const W = 100
+    const H = 100
+    const mask = new Uint8Array(W * H).fill(1) // 방 전체가 통행 가능
+    // 왼쪽 벽(x=0)에서 10px 떨어진 점 — 스냅 반경 안
+    const [snapped] = snapEntrancesToWalls(mask, W, H, [{ x: 10, y: 50 }])
+    expect(snapped.x).toBeCloseTo(0, 5)
+    expect(snapped.y).toBeCloseTo(50, 5)
+  })
+
+  it('모든 벽에서 WALL_SPLICE_MAX_PX보다 멀면 원래 좌표를 그대로 돌려준다(관리자가 방 안쪽 깊숙이 찍은 목적지)', () => {
+    const W = 100
+    const H = 100
+    const mask = new Uint8Array(W * H).fill(1)
+    // 정중앙(50,50) — 어느 벽까지도 50px, 스냅 반경(30px) 밖
+    const [snapped] = snapEntrancesToWalls(mask, W, H, [{ x: 50, y: 50 }])
+    expect(snapped).toEqual({ x: 50, y: 50 })
+  })
+
+  it('maxDistancePx를 Infinity로 주면 거리 제한 없이 무조건 가장 가까운 벽으로 스냅한다(종합확인 전용 요청)', () => {
+    const W = 100
+    const H = 100
+    const mask = new Uint8Array(W * H).fill(1)
+    // 정중앙(50,50) — 기본 반경(30px)이면 안 스냅되지만, 무제한이면 가장 가까운 벽(아무 벽이나 50px로 동률)으로 붙어야 한다
+    const [snapped] = snapEntrancesToWalls(mask, W, H, [{ x: 50, y: 50 }], Infinity)
+    expect(Math.hypot(snapped.x - 50, snapped.y - 50)).toBeCloseTo(50, 5)
+    // 스냅된 지점 자체는 경계선 위(네 변 중 하나)에 있어야 한다.
+    const onBoundary = snapped.x === 0 || snapped.x === 100 || snapped.y === 0 || snapped.y === 100
+    expect(onBoundary).toBe(true)
+  })
+
+  it('서로 떨어진 두 방 중 각 점에 실제로 더 가까운 방의 벽으로 스냅한다', () => {
+    const W = 200
+    const H = 100
+    const mask = new Uint8Array(W * H)
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[y * W + x] = 1
+    }
+    rect(0, 0, 50, 100) // 왼쪽 방
+    rect(150, 0, 200, 100) // 오른쪽 방(둘 사이는 통행 불가 — 서로 다른 컴포넌트)
+    const points = [
+      { x: 10, y: 50 }, // 왼쪽 방 안, 왼쪽 벽(x=0)에서 10px
+      { x: 190, y: 50 }, // 오른쪽 방 안, 오른쪽 벽(x=200)에서 10px
+    ]
+    const [left, right] = snapEntrancesToWalls(mask, W, H, points)
+    expect(left.x).toBeCloseTo(0, 5)
+    expect(right.x).toBeCloseTo(200, 5)
   })
 })

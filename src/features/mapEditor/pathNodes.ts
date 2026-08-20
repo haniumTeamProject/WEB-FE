@@ -319,7 +319,10 @@ const MERGE_RADIUS_PX = 6
 // 넣는다(코너A—목적지—코너B로 곧게 쪼개짐). MAX_SNAP_PX(입구를 아예 이 컴포넌트에 배정할지 보는,
 // 훨씬 관대한 판정)와는 다른 용도라 별도 상수로 둔다 — 둘을 같은 값으로 쓰면, 배정은 되지만 스냅은
 // 안 되길 원하는 "적당히 먼" 입구를 표현할 방법이 없어진다.
-const WALL_SPLICE_MAX_PX = 30
+// export하는 이유: 종합확인(FloorOverviewPage)에서 목적지/연결자 마커를 원래 등록 좌표가 아니라
+// 경로노드가 벽에 스냅한 좌표로 보여줄 때, 원본 좌표와 스냅된 노드 좌표 사이의 최대 벌어짐 값으로
+// 그대로 재사용한다 — 값을 따로 복제해두면 나중에 한쪽만 바뀌었을 때 조용히 어긋난다.
+export const WALL_SPLICE_MAX_PX = 30
 // 코너가 이미 어느 방향으론가 벽에 거의 붙어있으면(예: 마스크가 손으로 채워져서 코너 바로 위 1px만
 // 살짝 떨어진 경우) 그 방향의 "횡단 거리"가 거의 0이 된다. 이런 사실상 무의미한 초단거리 후보를
 // 걸러내지 않으면 두 가지 문제가 생긴다: (1) snapFacingPointToWall이 벽 선에 맞추다 원점과 완전히
@@ -351,6 +354,43 @@ interface LoopEntry {
   // 루프에 계속 껴 있어야 한다(원래 코너였던 자리를 건너뛰면 그 자리가 대각선으로 이어져 버린다,
   // 실제 발견된 문제). 입구 자신만으로 새로 생긴 점(병합 안 됨)은 false — 메인 루프에 안 낀다.
   isWallVertex: boolean
+}
+
+// 종합확인(FloorOverviewPage)처럼 저장된 경로노드 그래프 없이도 목적지·연결자 마커를 "벽에 붙은"
+// 위치로 보여주고 싶을 때 쓰는 가벼운 버전 — generatePathNodes 안에서 입구를 벽 선 위로 스냅하는
+// 부분만 떼어냈다. 코너·건너기 엣지 등 전체 그래프를 만들 필요가 없고, 경로노드를 아직 저장하지
+// 않은 층에서도(관리자가 '경로 노드 생성'만 눌러보고 저장 버튼은 안 눌렀거나, 아예 그 단계를 안 밟은
+// 경우) 항상 마스크 기준으로 실시간 계산해 같은 스냅 결과를 보여줄 수 있다(실제 발견된 문제: 저장된
+// 그래프가 없으면 원래 등록 좌표 그대로 떠서 안 붙어 보임).
+// maxDistancePx 기본값은 generatePathNodes와 같은 WALL_SPLICE_MAX_PX — 그 경우 실제 경로노드
+// 그래프와 동일하게, 벽에서 너무 멀면(방 안쪽 깊숙한 목적지 등) 스냅하지 않고 원래 좌표를 돌려준다.
+// 종합확인은 "관리자가 찍은 위치가 아니라 경로노드처럼 정리된 모습"을 보여달라는 요청이라, 거리
+// 상관없이 무조건 가장 가까운 벽으로 붙이길 원한다 — 그 경우 호출부에서 Infinity를 넘긴다(실제
+// 요청: "벽에 안 붙었잖아").
+export function snapEntrancesToWalls(
+  mask: Uint8Array,
+  w: number,
+  h: number,
+  points: { x: number; y: number }[],
+  maxDistancePx: number = WALL_SPLICE_MAX_PX,
+): { x: number; y: number }[] {
+  const { labels, comps } = labelComponents(mask, w, h)
+  const loops = comps
+    .map((component, componentId) => ({ component, componentId }))
+    .filter(({ component }) => component.count >= MIN_COMPONENT_PIXELS)
+    .map(({ componentId }) =>
+      mergeNearCollinearPoints(simplify(traceBoundary(mask, w, h, labels, componentId), SIMPLIFY_EPSILON_PX)),
+    )
+    .filter((loop) => loop.length >= 3)
+
+  return points.map(({ x, y }) => {
+    let best: { point: Point; distance: number } | null = null
+    for (const loop of loops) {
+      const projected = nearestPointOnLoop(loop, [x, y])
+      if (!best || projected.distance < best.distance) best = projected
+    }
+    return best && best.distance <= maxDistancePx ? { x: best.point[0], y: best.point[1] } : { x, y }
+  })
 }
 
 export function generatePathNodes(
