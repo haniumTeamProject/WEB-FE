@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Konva from 'konva'
 import { Stage, Layer, Image as KonvaImage, Circle, Line } from 'react-konva'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
@@ -10,7 +10,7 @@ import { useConnectors } from '@/features/connectors/hooks'
 import { useLandmarks } from '@/features/landmarks/hooks'
 import { generatePathNodes } from '@/features/mapEditor/pathNodes'
 import type { EntrancePoint, PathEdge, PathNode } from '@/features/mapEditor/pathNodes'
-import { findShortestPath } from '@/features/mapEditor/pathfind'
+import { findShortestPath, isCrossEdgeUsable } from '@/features/mapEditor/pathfind'
 import { pathNodesStorageKey, readStoredPathNodes } from '@/features/mapEditor/pathNodesStorage'
 import type { StoredPathNodes } from '@/features/mapEditor/pathNodesStorage'
 import { arrowheadPoints } from '@/lib/canvasArrows'
@@ -57,7 +57,6 @@ function decodeMask(dataUrl: string, w: number, h: number): Promise<Uint8Array> 
 // DB에 반영되고, 다음에 들어올 때는(다른 브라우저·다른 관리자여도) 그 저장된 값을 최우선으로 불러온다.
 export default function PathNodePage() {
   const { buildingId = '', floorId = '' } = useParams()
-  const navigate = useNavigate()
   const { data: building } = useBuilding(buildingId)
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
@@ -347,11 +346,16 @@ export default function PathNodePage() {
 
   // 진단: 시작 노드에서 도달 가능한 노드 집합(방향 엣지 반영). 도달 못 하는 노드는 흐리게 표시해
   // 그래프가 어디서 끊겼는지 눈으로 드러낸다. "경로 없음"이 뜰 때 원인 위치를 바로 보이게 하는 용도.
+  // findShortestPath와 같은 규칙(목적지 건너기는 그 목적지가 실제 출발지일 때만 사용 가능)을 여기서도
+  // 똑같이 적용한다 — 안 그러면 실제 경로 탐색은 절대 쓰지 않을 건너기인데, 진단에서는 도달 가능한
+  // 것처럼(흐려지지 않고) 표시되는 불일치가 생긴다(실제 발견된 문제).
   const reachableFromStart = useMemo(() => {
     if (!testMode || !testStart) return null
     const adj = new Map<string, string[]>()
     for (const n of nodes) adj.set(n.id, [])
     for (const e of edges) {
+      const a = byId.get(e.a)
+      if (e.type === 'cross' && a && !isCrossEdgeUsable(a, testStart)) continue
       adj.get(e.a)?.push(e.b)
       if (!e.directed) adj.get(e.b)?.push(e.a)
     }
@@ -856,7 +860,6 @@ export default function PathNodePage() {
             {
               onSuccess: () => {
                 setConfirmSaveOpen(false)
-                navigate(`/buildings/${buildingId}`)
               },
             },
           )
