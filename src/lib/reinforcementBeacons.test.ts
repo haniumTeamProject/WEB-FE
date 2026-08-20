@@ -140,6 +140,25 @@ describe('findAdjacentPairs', () => {
     expect(hasPair(pairs, '1', '8')).toBe(true)
     expect(hasPair(pairs, '4', '7')).toBe(true)
   })
+
+  it('한 곳에 촘촘하게 몰린 비콘들은 거의 다 이어버리지 않는다(실제 발견된 문제: 6개 비콘에 15개 가능 쌍 중 12개가 걸림)', () => {
+    // 트리(MST) 모양이 아니라 덩어리 형태로 몰려 있으면, "MST 트리 경로보다 살짝만 짧아도" 평행
+    // 경로로 인정하는 기준이 너무 관대해서 거의 완전그래프에 가깝게 이어지던 문제.
+    const w = 400
+    const h = 400
+    const walkable = new Uint8Array(w * h).fill(1) // 넓은 방 하나, 전부 서로 가시선 닿음
+    const points: P[] = [
+      { id: 'B1', x: 60, y: 160, component: 0 },
+      { id: 'B4', x: 200, y: 220, component: 0 },
+      { id: 'B6', x: 40, y: 190, component: 0 },
+      { id: 'B7', x: 170, y: 130, component: 0 },
+      { id: 'B8', x: 300, y: 60, component: 0 },
+      { id: 'B9', x: 320, y: 240, component: 0 },
+    ]
+    const pairs = findAdjacentPairs(points, w, h, walkable, 1)
+    // MST 기준 최소 5개(N-1) — 평행 경로 보완이 있어도 크게 안 넘어야 한다(예전엔 12개까지 폭증).
+    expect(pairs.length).toBeLessThanOrEqual(7)
+  })
 })
 
 describe('dedupeClosePlanItems', () => {
