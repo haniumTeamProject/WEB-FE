@@ -101,6 +101,34 @@ function isVisible(
   return blocked / (steps + 1) <= VISIBILITY_BLOCKED_TOLERANCE
 }
 
+// 트리(사이클 없는 그래프) 위에서 시작점→끝점까지 유일한 경로를 따라간 거리를 잰다. 못 찾으면 null.
+function treePathDistance(adj: Map<string, { to: string; dist: number }[]>, startId: string, endId: string): number | null {
+  if (startId === endId) return 0
+  const visited = new Set([startId])
+  const queue: [string, number][] = [[startId, 0]]
+  while (queue.length) {
+    const [id, dist] = queue.shift() as [string, number]
+    for (const edge of adj.get(id) ?? []) {
+      if (visited.has(edge.to)) continue
+      if (edge.to === endId) return dist + edge.dist
+      visited.add(edge.to)
+      queue.push([edge.to, dist + edge.dist])
+    }
+  }
+  return null
+}
+
+// MST로 이미 연결된 두 점이라도, 그 직선이 "MST 트리를 따라 도는 경로"보다 뚜렷하게(이 비율 이하로)
+// 짧으면 실제로는 다른 물리적 경로(예: 가운데 장애물을 사이에 두고 반대편으로 도는 평행한 복도)라고
+// 보고 별도로 추가한다. 처음엔 0.9로 뒀는데, 비콘이 한 곳에 촘촘하게 몰린(트리 모양이 아니라 덩어리
+// 형태인) 구역에서는 MST 트리 경로가 살짝만 돌아가도(예: 90% 이내) 이 기준에 걸려서, 사실상 거의
+// 모든 쌍이 "평행 경로"로 인정돼 버려 보강비콘이 무더기로 생겼다(실제 발견된 문제, 6개 비콘에 15개
+// 가능 쌍 중 12개가 걸림 — MST 기준 5개의 2배 넘게). 0.5로(뚜렷하게 절반 이하로 짧을 때만) 훨씬
+// 엄격하게 좁혔다 — 계단실처럼 정말 멀리 돌아가야 하는 경우(비율 0.3 안팎)는 여전히 잡아내면서,
+// 촘촘한 구역의 애매하게 짧은 쌍들은 걸러진다(같은 6개 비콘 기준 12개 → 6개로 감소, MST 기준 5개에
+// 근접).
+const PARALLEL_ROUTE_RATIO = 0.5
+
 // 같은 컴포넌트(방·복도) 안에서 의미비콘들을 잇는 최소 신장 트리(MST)를 구한다. 비콘이 N개면 항상
 // 정확히 N-1개(또는 그 이하, 가시선 그래프가 끊긴 경우)의 간선만 생긴다 — 그래프가 아니라 트리라서,
 // 촘촘한 구역에서 "서로 가시선 닿는 쌍을 전부" 이어버려 보강비콘이 여러 겹으로 겹쳐 생기는 문제가
@@ -109,6 +137,12 @@ function isVisible(
 // 곳은 한쪽만 이어지고 나머지가 통째로 빠지는 문제가 있었다 — MST는 별 모양 위상에서도(중심에서
 // 갈라지는 게 가장 싼 트리이므로) 모든 방향이 자연스럽게 이어진다. 후보 간선은 가시선(벽을 안
 // 가로지름)이 있는 쌍으로만 제한한다.
+//
+// 다만 MST는 "연결"만 보장하지 "실제로 사람이 걸어 다니는 모든 경로"를 다 보장하진 않는다 — 가운데
+// 장애물(계단실 등)을 사이에 두고 위/아래로 도는 두 평행한 경로가 있으면, 둘 다 필요한데도 MST는
+// 그래프 연결에 하나면 충분하다고 보고 한쪽만 남긴다(실제 발견된 문제: 위쪽엔 생기고 아래쪽 대칭
+// 경로엔 안 생김). 그래서 MST를 만든 뒤, MST에서 탈락한 후보 중 "MST 경로를 도는 것보다 뚜렷하게
+// 짧은" 것들은 별도의 평행 경로로 보고 다시 추가한다.
 export function findAdjacentPairs<T extends { id: string; x: number; y: number; component: number }>(
   points: T[],
   w: number,
@@ -144,12 +178,28 @@ export function findAdjacentPairs<T extends { id: string; x: number; y: number; 
       parent.set(id, root)
       return root
     }
-    for (const { a, b } of candidates) {
+    const treeAdj = new Map<string, { to: string; dist: number }[]>()
+    for (const p of group) treeAdj.set(p.id, [])
+    const rejected: { a: T; b: T; dist: number }[] = []
+    for (const cand of candidates) {
+      const { a, b, dist } = cand
       const rootA = find(a.id)
       const rootB = find(b.id)
-      if (rootA === rootB) continue
+      if (rootA === rootB) {
+        rejected.push(cand)
+        continue
+      }
       parent.set(rootA, rootB)
       result.push([a, b])
+      treeAdj.get(a.id)!.push({ to: b.id, dist })
+      treeAdj.get(b.id)!.push({ to: a.id, dist })
+    }
+
+    for (const { a, b, dist } of rejected) {
+      const viaTree = treePathDistance(treeAdj, a.id, b.id)
+      if (viaTree != null && dist < viaTree * PARALLEL_ROUTE_RATIO) {
+        result.push([a, b])
+      }
     }
   }
   return result
@@ -159,18 +209,24 @@ export function findAdjacentPairs<T extends { id: string; x: number; y: number; 
 // 때문에 우연히 거의 같은 위치로 몰릴 수 있다 — 실질적으로 같은 지점을 중복 표시하는 것이므로,
 // 이미 채택한 점과 이 거리보다 가까우면 나중 점은 버린다. 한 간선 안에서 균등 삽입되는 점끼리는
 // 항상 D_MAX_M/2(3m) 이상 떨어지므로, 그보다 확실히 작은 값으로 잡아 정상 간격은 건드리지 않는다.
+//
+// 이 최소 간격 보장은 "그 보간점이 속한 간선의 두 끝(의미비콘)"에만 적용된다 — 만약 어떤 의미비콘이
+// 그 간선의 끝점이 아니라 그냥 근처에 있는 다른 비콘이라면, 이 거리 보장과 무관하게 우연히 아주
+// 가까이 찍힐 수 있다(실제 발견된 문제: 보강비콘이 상관없는 의미비콘 바로 옆에 겹쳐 생김). 그래서
+// 기존 의미비콘 위치도 함께 넘겨받아 같은 기준으로 걸러낸다.
 const MIN_REINFORCEMENT_SPACING_M = 2
 
 export function dedupeClosePlanItems(
   items: ReinforcementPlanItem[],
   mPerDesignPx: number,
+  existingPoints: { x: number; y: number }[] = [],
 ): ReinforcementPlanItem[] {
+  const isTooClose = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y) * mPerDesignPx < MIN_REINFORCEMENT_SPACING_M
   const kept: ReinforcementPlanItem[] = []
   for (const item of items) {
-    const tooClose = kept.some(
-      (k) => Math.hypot(item.x - k.x, item.y - k.y) * mPerDesignPx < MIN_REINFORCEMENT_SPACING_M,
-    )
-    if (tooClose) continue
+    if (existingPoints.some((p) => isTooClose(item, p))) continue
+    if (kept.some((k) => isTooClose(item, k))) continue
     kept.push(item)
   }
   return kept
@@ -213,5 +269,5 @@ export async function planReinforcementBeacons(
       plan.push({ x, y, pair: [a.id, b.id] })
     }
   }
-  return dedupeClosePlanItems(plan, mPerDesignPx)
+  return dedupeClosePlanItems(plan, mPerDesignPx, semanticPoints)
 }

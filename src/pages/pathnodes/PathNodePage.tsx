@@ -1,29 +1,34 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Konva from 'konva'
 import { Stage, Layer, Image as KonvaImage, Circle, Line } from 'react-konva'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
-import { useMask, useScale } from '@/features/mapEditor/hooks'
+import { useMask, usePathNodes, useSavePathNodes, useScale } from '@/features/mapEditor/hooks'
 import { useConnectors } from '@/features/connectors/hooks'
 import { useLandmarks } from '@/features/landmarks/hooks'
 import { generatePathNodes } from '@/features/mapEditor/pathNodes'
 import type { EntrancePoint, PathEdge, PathNode } from '@/features/mapEditor/pathNodes'
-import { findShortestPath } from '@/features/mapEditor/pathfind'
+import { findShortestPath, isCrossEdgeUsable } from '@/features/mapEditor/pathfind'
 import { pathNodesStorageKey, readStoredPathNodes } from '@/features/mapEditor/pathNodesStorage'
 import type { StoredPathNodes } from '@/features/mapEditor/pathNodesStorage'
 import { arrowheadPoints } from '@/lib/canvasArrows'
 import { pathNodeColor } from '@/features/mapEditor/pathNodeColors'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { InfoTooltip } from '@/components/ui/InfoTooltip'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const DESIGN_W = 900 // 비콘/랜드마크 좌표 기준 폭 — FloorMapCanvas.DESIGN_W와 동일
+// 캔버스 폭을 컨테이너 폭에 그대로 맞추면 아주 넓은 모니터에서는 높이도 같이 커져서(비율은 유지되니
+// 찌그러지진 않지만) 전체가 지나치게 거대해진다(실제 발견된 문제, 종합확인 화면과 동일한 원인) —
+// 이 이상은 안 키우도록 상한을 둔다.
+const MAX_CANVAS_W = 1000
 
-const DEFAULT_CROSSING_MAX_M = 12 // 축척 미설정 시 기본 횡단 가능 거리(대략 240px 상당)
+const DEFAULT_CROSSING_MAX_M = 3 // 축척 미설정 시 기본 횡단 가능 거리(대략 60px 상당)
 const MIN_CORNER_CLEARANCE_M = 0.3 // 코너 횡단 좌우 최소 여유 — 이보다 벽이 가까우면 벽을 타는 걸로 보고 안 만든다
 const DEFAULT_CROSS_PENALTY_M = 5 // 건너기 페널티 기본값 — 이만큼 이상 절약될 때만 건넘
 
@@ -47,10 +52,11 @@ function decodeMask(dataUrl: string, w: number, h: number): Promise<Uint8Array> 
 }
 
 // 지도 검수에서 저장된 통행 영역 + 비콘/목적지 입구로 경로노드를 생성하고, 점을 드래그해 수정할 수 있는 마지막 단계.
-// 지도 검수 단계와 분리된 별도 페이지 — 이동 결과는 층 ID 기준 localStorage에 저장(백엔드 저장은 추후 작업).
+// 지도 검수 단계와 분리된 별도 페이지 — 편집 중에는 새로고침에 대비해 층 ID 기준 localStorage에도
+// 임시로 남기지만, 실제 저장소는 서버다: '저장' 버튼을 눌러야 GET/PUT /floors/:floorId/path-nodes로
+// DB에 반영되고, 다음에 들어올 때는(다른 브라우저·다른 관리자여도) 그 저장된 값을 최우선으로 불러온다.
 export default function PathNodePage() {
   const { buildingId = '', floorId = '' } = useParams()
-  const navigate = useNavigate()
   const { data: building } = useBuilding(buildingId)
   const { data: floors } = useFloors(buildingId)
   const floor = floors?.find((f) => f.id === floorId)
@@ -59,6 +65,8 @@ export default function PathNodePage() {
   const { data: savedScale } = useScale(floorId)
   const { data: connectors } = useConnectors(buildingId)
   const { data: landmarks } = useLandmarks(floorId)
+  const { data: savedPathNodes } = usePathNodes(floorId)
+  const savePathNodesMutation = useSavePathNodes(floorId)
   const [crossingMaxM, setCrossingMaxM] = useState(String(DEFAULT_CROSSING_MAX_M))
   const [minClearanceM, setMinClearanceM] = useState(String(MIN_CORNER_CLEARANCE_M))
 
@@ -67,10 +75,10 @@ export default function PathNodePage() {
   useLayoutEffect(() => {
     const el = containerRef.current
     if (!el) return
-    setWidth(Math.round(el.getBoundingClientRect().width))
+    setWidth(Math.min(MAX_CANVAS_W, Math.round(el.getBoundingClientRect().width)))
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width
-      if (w) setWidth(Math.round(w))
+      if (w) setWidth(Math.min(MAX_CANVAS_W, Math.round(w)))
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -208,8 +216,16 @@ export default function PathNodePage() {
   async function onGenerate() {
     if (!savedMask?.dataUrl) return
     // 화면에 아직 아무것도 안 띄운 첫 클릭이고 이전에 저장해둔 게 있으면, 새로 만들지 않고
-    // 그 수정물을 그대로 불러온다 — 드래그로 고친 위치가 날아가지 않게.
+    // 그 수정물을 그대로 불러온다 — 드래그로 고친 위치가 날아가지 않게. 서버에 저장된 값이 최우선(다른
+    // 브라우저·다른 관리자가 저장한 것도 포함)이고, 서버에 아직 아무것도 없을 때만 이 브라우저에 남은
+    // localStorage 임시 초안(저장 버튼을 안 누르고 나간 경우 등)을 대신 불러온다.
     if (nodes.length === 0 && edges.length === 0) {
+      if (savedPathNodes) {
+        setNodes(savedPathNodes.nodes)
+        setEdges(savedPathNodes.edges)
+        setMaskDims({ w: savedPathNodes.maskW, h: savedPathNodes.maskH })
+        return
+      }
       const stored = readStoredPathNodes(floorId)
       if (stored) {
         setNodes(stored.nodes)
@@ -330,11 +346,16 @@ export default function PathNodePage() {
 
   // 진단: 시작 노드에서 도달 가능한 노드 집합(방향 엣지 반영). 도달 못 하는 노드는 흐리게 표시해
   // 그래프가 어디서 끊겼는지 눈으로 드러낸다. "경로 없음"이 뜰 때 원인 위치를 바로 보이게 하는 용도.
+  // findShortestPath와 같은 규칙(목적지 건너기는 그 목적지가 실제 출발지일 때만 사용 가능)을 여기서도
+  // 똑같이 적용한다 — 안 그러면 실제 경로 탐색은 절대 쓰지 않을 건너기인데, 진단에서는 도달 가능한
+  // 것처럼(흐려지지 않고) 표시되는 불일치가 생긴다(실제 발견된 문제).
   const reachableFromStart = useMemo(() => {
     if (!testMode || !testStart) return null
     const adj = new Map<string, string[]>()
     for (const n of nodes) adj.set(n.id, [])
     for (const e of edges) {
+      const a = byId.get(e.a)
+      if (e.type === 'cross' && a && !isCrossEdgeUsable(a, testStart)) continue
       adj.get(e.a)?.push(e.b)
       if (!e.directed) adj.get(e.b)?.push(e.a)
     }
@@ -477,6 +498,11 @@ export default function PathNodePage() {
             style={{ cursor: 'grab' }}
           >
             {maskDims && (
+              // 캔버스 폭에 상한(MAX_CANVAS_W)을 두면서 컨테이너는 그보다 넓을 수 있게 됐다 — 가운데
+              // 정렬 없이 두면 오른쪽에 빈 공간만 남고 캔버스가 왼쪽에 붙어 보인다(실제 발견된 문제).
+              // Stage에 style prop을 직접 줘도 Konva가 wrapper div의 style을 자체적으로 다시 써버려서
+              // 안 먹는다 — 대신 순수 div로 감싸서 그 div를 가운데 정렬한다.
+              <div style={{ width, margin: '0 auto' }}>
               <Stage
                 ref={stageRef}
                 width={width}
@@ -599,6 +625,7 @@ export default function PathNodePage() {
                   })}
                 </Layer>
               </Stage>
+              </div>
             )}
             {!maskDims && (
               <div className="text-muted text-sm flex items-center justify-center" style={{ height: 300 }}>
@@ -618,12 +645,16 @@ export default function PathNodePage() {
 
         <Card className="w-[260px] shrink-0">
           <h3>경로노드</h3>
-          <p className="text-muted text-[13px] mt-2">
-            비콘·목적지 입구를 기준으로 경로노드를 자동 생성합니다. 위치가 어색하면 점을 드래그해서 옮기세요.
-          </p>
+          <div className="flex items-center gap-1.5 mt-2 text-[13px] text-muted">
+            <span>사용법</span>
+            <InfoTooltip text="비콘·목적지 입구를 기준으로 경로노드를 자동 생성합니다. 위치가 어색하면 점을 드래그해서 옮기세요." />
+          </div>
 
           <div className="mt-4">
-            <span className="block text-[13px] text-muted mb-2">횡단 가능한 최대 거리</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              횡단 가능한 최대 거리
+              <InfoTooltip text="복도 건너편까지의 거리가 이 값보다 멀면 횡단 엣지를 만들지 않아요. 값을 키우면 넓은 홀이나 로비도 건너뛸 수 있게 되고, 줄이면 폭이 좁은 곳에서만 횡단 엣지가 생겨요." />
+            </span>
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-muted">최대</span>
               <input
@@ -644,7 +675,10 @@ export default function PathNodePage() {
           </div>
 
           <div className="mt-4">
-            <span className="block text-[13px] text-muted mb-2">코너 횡단 좌우 최소 여유</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              벽 근접 판정 거리
+              <InfoTooltip text="코너의 횡단 엣지 옆에 벽이 이미 가까이 있으면, 굳이 안 건너도 벽을 타고 갈 수 있으니 그 방향으로는 횡단 엣지를 만들지 않아요. 값을 높이면 더 멀리 있는 벽까지 '가깝다'고 보기 때문에 횡단 엣지가 더 적게 생기고, 0으로 두면 이 기능이 꺼져서 벽 바로 옆에서도 다 생겨요. 벽이 비스듬히 나 있는 경우엔 잘 못 걸러낼 수 있으니, 그럴 땐 거리를 좀 더 늘려보세요." />
+            </span>
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-muted">최소</span>
               <input
@@ -657,11 +691,6 @@ export default function PathNodePage() {
               />
               <span className="text-[12px] text-muted">m</span>
             </div>
-            <p className="text-[12px] text-muted mt-1">
-              벽 끝(코너) 횡단선의 옆(좌우 또는 상하)으로 이 거리 안에 벽이 있으면, 벽을 타면 바로 닿는
-              곳이라 보고 그 방향은 만들지 않습니다. 0으로 두면 끕니다. 벽이 반듯하지 않고 사선으로 나
-              있으면 좌우/상하로만 재는 이 검사가 못 잡을 수 있어 값을 좀 더 키우면 도움이 됩니다.
-            </p>
           </div>
 
           <Button className="w-full mt-4" disabled={generating} onClick={onGenerate}>
@@ -772,7 +801,10 @@ export default function PathNodePage() {
             )}
 
             <div className="mt-3">
-              <span className="block text-[13px] text-muted mb-2">건너기 페널티(이만큼 절약될 때만 건넘)</span>
+              <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+                건너기 페널티
+                <InfoTooltip text="직진 경로가 이 거리만큼 절약될 때만 횡단(건너기)을 선택합니다. 값을 키우면 웬만큼 이득이 커야만 건너고, 낮추면 조금만 가까워도 건넙니다." />
+              </span>
               <div className="flex items-center gap-2">
                 <span className="text-[12px] text-muted">+</span>
                 <input
@@ -819,10 +851,18 @@ export default function PathNodePage() {
         description="지금까지 배치한 경로노드로 이 층의 세팅이 마무리됩니다. 이후에도 이 화면에서 다시 수정할 수 있습니다."
         confirmLabel="저장"
         confirmVariant="primary"
+        pending={savePathNodesMutation.isPending}
         onCancel={() => setConfirmSaveOpen(false)}
         onConfirm={() => {
-          setConfirmSaveOpen(false)
-          navigate(`/buildings/${buildingId}`)
+          if (!maskDims) return
+          savePathNodesMutation.mutate(
+            { nodes, edges, maskW: maskDims.w, maskH: maskDims.h },
+            {
+              onSuccess: () => {
+                setConfirmSaveOpen(false)
+              },
+            },
+          )
         }}
       />
     </div>

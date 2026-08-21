@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchMask, fetchScale, saveMask, saveScale } from './api'
-import type { FloorMask, FloorScale } from './api'
+import { fetchMask, fetchPathNodes, fetchScale, saveMask, savePathNodes, saveScale } from './api'
+import type { FloorMask, FloorScale, PathNodesData } from './api'
 
 export function useMask(floorId: string) {
   return useQuery({
@@ -35,6 +35,25 @@ export function useSaveScale(floorId: string) {
     mutationFn: (scale: FloorScale) => saveScale(floorId, scale),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['scale', floorId] })
+      qc.invalidateQueries({ queryKey: ['buildings'] }) // 층 상태 갱신
+    },
+  })
+}
+
+export function usePathNodes(floorId: string) {
+  return useQuery({
+    queryKey: ['pathNodes', floorId],
+    queryFn: () => fetchPathNodes(floorId),
+    enabled: !!floorId,
+  })
+}
+
+export function useSavePathNodes(floorId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (pathNodes: PathNodesData) => savePathNodes(floorId, pathNodes),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pathNodes', floorId] })
       qc.invalidateQueries({ queryKey: ['buildings'] }) // 층 상태 갱신
     },
   })

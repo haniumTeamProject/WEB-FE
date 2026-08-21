@@ -296,6 +296,19 @@ export const handlers = [
     return HttpResponse.json({ ok: true })
   }),
 
+  // ---- 경로노드 ----
+  // 코너·연결자 입구·목적지 입구·맞은편(facing) 노드 + 벽선·횡단 엣지를 층 하나 분량으로 통째로
+  // 저장/조회한다 — GET 한 번으로 전부 복원되고, PUT 한 번으로 전부 갱신된다.
+  http.get(`${base}/floors/:floorId/path-nodes`, ({ params }) =>
+    HttpResponse.json(db.pathNodes[params.floorId as string] ?? null),
+  ),
+
+  http.put(`${base}/floors/:floorId/path-nodes`, async ({ params, request }) => {
+    const floorId = params.floorId as string
+    db.pathNodes[floorId] = await request.json()
+    return HttpResponse.json({ ok: true })
+  }),
+
   // ---- 비콘 ----
   http.get(`${base}/floors/:floorId/beacons`, ({ params }) =>
     HttpResponse.json(db.beacons[params.floorId as string] ?? []),

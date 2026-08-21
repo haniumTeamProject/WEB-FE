@@ -10,12 +10,27 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { SentenceText } from '@/components/ui/SentenceText'
+import { InfoTooltip } from '@/components/ui/InfoTooltip'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StepFooter } from '@/components/layout/StepNav'
 
-const CANVAS_W = 760
+// 원본 설계도 이미지가 이 폭보다 크면 여기서 잘라 벽 인식·저장용 마스크를 만든다(작으면 원본
+// 그대로, 업스케일은 안 함) — 순전히 "너무 큰 원본이 올라와도 성능·저장 용량이 감당 가능한 선을
+// 넘지 않게" 막는 상한이다. 예전엔 760, 그다음 1140으로 고정해뒀었는데 실제 업로드 원본(2372px)
+// 보다 한참 작아서 계속 흐리다는 피드백을 받았다 — 실제 화면에서 영역 채우기(전체 픽셀을 훑는 가장
+// 무거운 동작)를 여러 값으로 실측해보니 2400까지도 200ms 안팎으로 즉각 반응해서 이 값으로 올렸다
+// (실측 기반, 실제 발견된 문제 재조정). 축척으로 환산하는 거리값(횡단 최대 거리 등)은 실제 축척을
+// 곱해 계산하므로 해상도가 바뀌어도 자동으로 맞춰지지만, 축척과 무관한 순수 픽셀 기준 여유값(경로
+// 노드 병합 반경 등)은 실제 거리 기준으로 더 빡빡해진다 — 원래도 대략적인 여유값이라 체감상 문제는
+// 없을 것으로 보고, 그 값들까지 비례 조정하진 않았다(대량의 테스트 재조정이 필요해서 위험 대비
+// 이득이 적다).
+const CANVAS_W = 2400
 const FILL: [number, number, number, number] = [75, 112, 229, 120] // 이동영역(반투명 파랑)
-const BARRIER_R = 2 // 벽 펜 반경(px)
+const BARRIER_R = 6 // 벽 펜 반경(px) — CANVAS_W 상향(760→2400)에 맞춰 비례 조정
+// 화면 표시 폭을 컨테이너 폭에 그대로 맞추면, 아주 넓은 모니터에서는 높이도 같은 비율로 커져서(원본
+// 비율은 유지되니 찌그러지진 않지만) 그림 전체가 지나치게 거대해져 스크롤을 많이 해야 한다(실제
+// 발견된 문제, 종합확인 화면과 동일한 원인). 이 이상은 안 키우도록 상한을 둔다.
+const MAX_DISPLAY_W = 1000
 const ZOOM_MIN = 1 // 기본 화면(맞춤 배율) 밑으로는 축소 못 하게
 const ZOOM_MAX = 8
 
@@ -297,7 +312,9 @@ export default function MapReviewPage() {
     if (!floorplan?.imageUrl) return
     const image = new window.Image()
     image.onload = () => {
-      const w = CANVAS_W
+      // 원본이 CANVAS_W보다 작으면 그냥 원본 그대로 쓴다(다운스케일도 업스케일도 안 함) — 굳이
+      // 작은 원본을 억지로 키우면 오히려 흐려진다. 원본이 크면 CANVAS_W에서 자른다(성능·저장 용량 보호용 상한).
+      const w = Math.min(image.width, CANVAS_W)
       const h = Math.round((image.height / image.width) * w)
       const base = document.createElement('canvas')
       base.width = w
@@ -394,10 +411,10 @@ export default function MapReviewPage() {
   useLayoutEffect(() => {
     const el = stageRef.current
     if (!el) return
-    setContainerWidth(Math.round(el.getBoundingClientRect().width))
+    setContainerWidth(Math.min(MAX_DISPLAY_W, Math.round(el.getBoundingClientRect().width)))
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width
-      if (w) setContainerWidth(Math.round(w))
+      if (w) setContainerWidth(Math.min(MAX_DISPLAY_W, Math.round(w)))
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -739,6 +756,9 @@ export default function MapReviewPage() {
             }}
           >
             {dims && (
+              // 캔버스 폭에 상한(MAX_DISPLAY_W)을 두면서 이 박스(stageRef)는 그보다 넓을 수 있게
+              // 됐다 — margin: 0 auto 없이 두면 오른쪽에 빈 공간만 남고 캔버스가 왼쪽에 붙어 보인다
+              // (실제 발견된 문제). transform(pan/zoom)은 레이아웃과 무관해 margin과 안 부딪힌다.
               <canvas
                 ref={canvasRef}
                 width={dims.w}
@@ -750,6 +770,7 @@ export default function MapReviewPage() {
                 onMouseLeave={onMouseUp}
                 style={{
                   display: 'block',
+                  margin: '0 auto',
                   width: dims.w * fitScale,
                   height: dims.h * fitScale,
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
@@ -781,12 +802,12 @@ export default function MapReviewPage() {
               </button>
             </div>
           </div>
-          <p className="mt-2 text-[13px] text-muted">
-            영역을 <strong>클릭</strong>하면 통행 영역이 채워집니다. 출입구처럼 벽이 뚫려 밖으로 샐 때는{' '}
-            <strong>벽 그리기</strong>로 틈을 막은 뒤 채우세요. <strong>Ctrl+휠</strong>(트랙패드는 Ctrl+두
-            손가락) 또는 <strong>스페이스바</strong>를 누른 채 드래그하거나 마우스{' '}
-            <strong>가운데 버튼</strong>을 사용하면 어떤 도구를 쓰던 중이든 화면 이동 가능합니다.
-          </p>
+          <div className="flex items-center gap-1.5 mt-2 text-[13px] text-muted">
+            <span>사용법</span>
+            <InfoTooltip
+              text="영역을 클릭하면 통행 영역이 채워집니다. 출입구처럼 벽이 뚫려 밖으로 샐 때는 벽 그리기로 틈을 막은 뒤 채우세요. Ctrl+휠(트랙패드는 Ctrl+두 손가락) 또는 스페이스바를 누른 채 드래그하거나 마우스 가운데 버튼을 사용하면 어떤 도구를 쓰던 중이든 화면 이동 가능합니다."
+            />
+          </div>
         </div>
 
         <Card className="w-[260px] shrink-0">
@@ -822,7 +843,10 @@ export default function MapReviewPage() {
           </div>
 
           <div className="mt-4">
-            <span className="block text-[13px] text-muted mb-2">벽 인식 민감도: {threshold}</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              벽 인식 민감도: {threshold}
+              <InfoTooltip text="밖으로 새면 ↑ 올리고, 방 안에서 안 퍼지면 ↓ 내리세요." />
+            </span>
             <input
               type="range"
               min={120}
@@ -831,16 +855,15 @@ export default function MapReviewPage() {
               onChange={(e) => setThreshold(Number(e.target.value))}
               className="w-full"
             />
-            <span className="block text-[12px] text-muted mt-1">
-              밖으로 새면 ↑ 올리고,
-              <br />방 안에서 안 퍼지면 ↓ 내리세요.
-            </span>
           </div>
 
           <div className="mt-4">
-            <span className="block text-[13px] text-muted mb-2">틈 메우기 (떨어진 복도 이어붙이기)</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              틈 메우기
+              <InfoTooltip text="복도가 살짝 끊어져 보이면, 아래 거리 이내일 때 자동으로 이어붙여요." />
+            </span>
             <div className="flex items-center gap-2">
-              <span className="text-[12px] text-muted">최대</span>
+              <span className="text-[12px] text-muted">이 거리까지 이어붙이기</span>
               <input
                 type="number"
                 min={0.01}
@@ -862,9 +885,12 @@ export default function MapReviewPage() {
           </div>
 
           <div className="mt-4">
-            <span className="block text-[13px] text-muted mb-2">노이즈 제거 (돌출부·구멍 깎기)</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              벽 모양 다듬기
+              <InfoTooltip text="자동으로 채워진 벽 모양이 울퉁불퉁하거나 작은 구멍·돌기가 있으면, 지정한 크기 이하는 매끄럽게 다듬어요." />
+            </span>
             <div className="flex items-center gap-2">
-              <span className="text-[12px] text-muted">최대</span>
+              <span className="text-[12px] text-muted">이 크기까지 다듬기</span>
               <input
                 type="number"
                 min={0.01}
@@ -881,13 +907,13 @@ export default function MapReviewPage() {
               disabled={!savedScale}
               onClick={applyNoiseRemove}
             >
-              노이즈 제거 적용
+              벽 다듬기 적용
             </Button>
           </div>
 
           {!savedScale && (
             <p className="text-[12px] text-muted mt-2">
-              틈 메우기·노이즈 제거는 축척을 먼저 설정해야 사용할 수 있습니다.
+              틈 메우기·벽 모양 다듬기는 축척을 먼저 설정해야 사용할 수 있습니다.
             </p>
           )}
 
