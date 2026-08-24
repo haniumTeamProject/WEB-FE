@@ -37,7 +37,7 @@ export default function SignupPage() {
 
   async function onSubmit(values: FormValues) {
     if (!file) {
-      setFileError('기관 공문이 필요합니다. 첨부해 주세요')
+      setFileError('기관 공문 파일을 첨부해 주세요.')
       return
     }
     setFileError('')
@@ -60,18 +60,18 @@ export default function SignupPage() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'grid', gap: 16 }}>
       <div style={{ textAlign: 'center' }}>
-        <h1 style={{ margin: 0 }}>회원가입</h1>
+        <h1 style={{ margin: 0 }}>계정 생성</h1>
         <p style={{ color: '#8C99B3', fontSize: 14, marginTop: 4 }}>로그인 하면 모든 서비스를 이용할 수 있습니다.</p>
       </div>
       <Input label="이메일" placeholder="admin@ac.kr" error={errors.email?.message} {...register('email')} />
-      <Input label="비밀번호" type="password" error={errors.password?.message} {...register('password')} />
+      <Input label="이름" placeholder="Username" error={errors.name?.message} {...register('name')} />
+      <Input label="암호" type="password" error={errors.password?.message} {...register('password')} />
       <Input
-        label="비밀번호 확인"
+        label="암호 재입력"
         type="password"
         error={errors.passwordConfirm?.message}
         {...register('passwordConfirm')}
       />
-      <Input label="이름" placeholder="Username" error={errors.name?.message} {...register('name')} />
       <Input
         label="소속 기관"
         placeholder="예: 수원대학교 시설관리팀"
@@ -110,7 +110,7 @@ export default function SignupPage() {
         )}
       </div>
       <Button type="submit" disabled={signup.isPending}>
-        {signup.isPending ? '제출 중…' : '회원가입'}
+        {signup.isPending ? '제출 중…' : '계정 생성'}
       </Button>
       <p style={{ textAlign: 'center', fontSize: 14 }}>
         이미 계정이 있나요? <Link to="/login">로그인</Link>
