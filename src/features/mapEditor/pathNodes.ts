@@ -1,4 +1,4 @@
-export type NodeKind = 'corner' | 'connector' | 'landmark' | 'facing'
+export type NodeKind = 'corner' | 'landmark' | 'facing'
 export type EdgeKind = 'wall' | 'cross'
 
 export interface PathNode {
@@ -7,7 +7,7 @@ export interface PathNode {
   y: number
   type: NodeKind
   concave: boolean // corner 타입에서만 의미 있음
-  pairKind?: 'connector' | 'landmark' // type === 'facing'일 때만 설정 — 맞은편이 어느 종류의 입구인지
+  pairKind?: 'landmark' // type === 'facing'일 때만 설정 — 맞은편이 목적지 입구인지 표시
 }
 
 export interface PathEdge {
@@ -23,7 +23,7 @@ export interface PathEdge {
 export interface EntrancePoint {
   x: number
   y: number
-  kind: 'connector' | 'landmark'
+  kind: 'landmark'
 }
 
 type Point = [number, number]
@@ -306,7 +306,7 @@ function cardinalFacingPoints(
 }
 
 function kindPriority(kind: NodeKind): number {
-  if (kind === 'connector' || kind === 'landmark') return 2
+  if (kind === 'landmark') return 2
   if (kind === 'facing') return 1
   return 0
 }
@@ -344,19 +344,19 @@ const SIMILAR_LENGTH_RATIO = 1.5
 interface LoopEntry {
   point: Point
   kind: NodeKind
-  pairKind?: 'connector' | 'landmark'
+  pairKind?: 'landmark'
   segmentIndex: number
   t: number
   distanceToLoop: number // point가 simplifiedLoop 경계선에서 얼마나 떨어져 있는지 — 벽선 트레이싱에 끼워도 되는지 판단용
   concave?: boolean // kind === 'corner'일 때만 의미 있음 — simplifiedLoop 원래 이웃 기준으로 미리 계산해둔다
   // 코너 또는 맞은편(facing)으로 "만들어졌을" 때만 true — 실제로 벽 경계 위의 점이라는 뜻이다. 나중에
-  // 입구(connector/landmark)와 병합돼 kind가 바뀌어도 이 값은 바뀌지 않는다 — 벽 트레이싱 메인
+  // 입구(landmark)와 병합돼 kind가 바뀌어도 이 값은 바뀌지 않는다 — 벽 트레이싱 메인
   // 루프에 계속 껴 있어야 한다(원래 코너였던 자리를 건너뛰면 그 자리가 대각선으로 이어져 버린다,
   // 실제 발견된 문제). 입구 자신만으로 새로 생긴 점(병합 안 됨)은 false — 메인 루프에 안 낀다.
   isWallVertex: boolean
 }
 
-// 종합확인(FloorOverviewPage)처럼 저장된 경로노드 그래프 없이도 목적지·연결자 마커를 "벽에 붙은"
+// 종합확인(FloorOverviewPage)처럼 저장된 경로노드 그래프 없이도 목적지 마커를 "벽에 붙은"
 // 위치로 보여주고 싶을 때 쓰는 가벼운 버전 — generatePathNodes 안에서 입구를 벽 선 위로 스냅하는
 // 부분만 떼어냈다. 코너·건너기 엣지 등 전체 그래프를 만들 필요가 없고, 경로노드를 아직 저장하지
 // 않은 층에서도(관리자가 '경로 노드 생성'만 눌러보고 저장 버튼은 안 눌렀거나, 아예 그 단계를 안 밟은
@@ -458,13 +458,13 @@ export function generatePathNodes(
     // 찾아낸, 축이 다른 노드에 흡수되면서 건너기 엣지가 사선이 되거나(안전장치에 걸려 통째로 버려짐)
     // 아예 안 생기는 원인이 된다.
     // blockMergeIntoKinds: 이 종류(kind)를 가진 기존 노드에는 절대 병합하지 않는다.
-    // - 입구(목적지/연결자) 자기 자신을 넣을 때는 ['connector','landmark','facing']을 준다. 서로 다른
+    // - 입구(목적지) 자기 자신을 넣을 때는 ['landmark','facing']을 준다. 서로 다른
     //   두 목적지가 우연히 MERGE_RADIUS_PX 이내로 가깝게 찍혀 있어도 하나로 합쳐지면(예: 문 하나에
     //   표시가 2개) 둘 중 하나가 통째로 사라진다. 또, 다른 입구의 맞은편(facing) 지점에 합쳐지면 그
     //   맞은편이 통째로 이 입구로 둔갑해서, 원래 그 맞은편을 쓰던 건너기 엣지가 목적지끼리 직접 이어진
     //   것처럼 사선으로 보인다(실제 발견된 문제) — 코너에는 그대로 병합·흡수 가능하다(코너=이 자리가
     //   바로 그 입구라는 뜻이라 정상).
-    // - 맞은편(facing) 지점을 넣을 때는 ['connector','landmark']만 준다. 남의 입구 노드에 흡수되면
+    // - 맞은편(facing) 지점을 넣을 때는 ['landmark']만 준다. 남의 입구 노드에 흡수되면
     //   위와 같은 이유로 사선처럼 보이는 문제가 생긴다. 다른 방향에서 찾은 맞은편끼리 겹치는 건
     //   허용해야 하므로(코너 맞은편과 입구 맞은편이 우연히 겹치는 정상 케이스) 'facing'은 막지 않는다.
     // exclude: 병합에서 제외할 기존 노드(들) — 같은 출발점(origin)에서 이번에 상하좌우로 쏴서 이미
@@ -474,11 +474,11 @@ export function generatePathNodes(
     function findOrInsert(
       point: Point,
       kind: NodeKind,
-      pairKind?: 'connector' | 'landmark',
+      pairKind?: 'landmark',
       exclude?: LoopEntry | LoopEntry[],
       axisLock?: { axis: 0 | 1; value: number },
       blockMergeIntoKinds?: NodeKind[],
-      // 입구(connector/landmark)가 벽 선분 위로 스냅됐을 때, 기존 코너와 병합되지 않고 새로 생기는
+      // 입구(landmark)가 벽 선분 위로 스냅됐을 때, 기존 코너와 병합되지 않고 새로 생기는
       // 경우에도 벽 순서(메인 루프) 안에 꼭짓점으로 끼워 넣으라는 표시 — 관리자가 수동으로 찍는
       // 목적지라 위치 정밀도가 중요하지 않으니, 벽에 어느 정도 가까우면 벽 선 위로 당겨서 "코너A—
       // 목적지—코너B"처럼 직선이 깔끔하게 둘로 쪼개지길 원한다는 요청에 따른 것(실제 사용자 요청).
@@ -488,13 +488,13 @@ export function generatePathNodes(
       const existing = entries.find(
         (entry) =>
           !excludeList.includes(entry) &&
-          // blockMergeIntoKinds는 "벽에서 뜬 채로 원래 좌표를 쓰는" connector/landmark에 흡수되는 걸
+          // blockMergeIntoKinds는 "벽에서 뜬 채로 원래 좌표를 쓰는" landmark에 흡수되는 걸
           // 막으려는 규칙이다. 예외는 딱 하나 — 지금 넣으려는 게 맞은편(facing) 지점이고, 기존 항목이
-          // 이미 벽 선 위로 스냅돼 꼭짓점으로 낀(isWallVertex) connector/landmark인 경우다. 이런 경우는
+          // 이미 벽 선 위로 스냅돼 꼭짓점으로 낀(isWallVertex) landmark인 경우다. 이런 경우는
           // 사실상 코너와 다를 바 없는 "진짜 벽 위 지점"이라, 우연히 같은 자리로 캐스팅이 겹치면 코너와
           // 겹칠 때처럼 그냥 병합돼야 한다 — 안 그러면 좌표가 완전히 같은 점이 두 개(입구 자신 + 이
           // 지점을 가리키는 별개의 맞은편 노드) 겹쳐 생겨서, 화면에서 "자기 자신을 가리키는 건너기"처럼
-          // 혼란스럽게 보인다(실제 발견된 문제). 반대로 지금 넣으려는 게 새 입구(connector/landmark)
+          // 혼란스럽게 보인다(실제 발견된 문제). 반대로 지금 넣으려는 게 새 입구(landmark)
           // 자신이면 이 예외를 적용하면 안 된다 — 안 그러면 벽 근처에 있는 서로 다른 두 목적지가 같은
           // 벽 스냅 지점으로 몰려 하나로 합쳐져 버린다(예전에 고친 문제의 재발).
           !(blockMergeIntoKinds?.includes(entry.kind) && !(kind === 'facing' && entry.isWallVertex)) &&
@@ -559,7 +559,7 @@ export function generatePathNodes(
         undefined,
         undefined,
         undefined,
-        ['connector', 'landmark', 'facing'],
+        ['landmark', 'facing'],
         onWallLine,
       )
       // 맞은편 탐색은 항상 노드의 최종 위치(entranceEntry.point)에서 한다 — 벽 위로 스냅하려던 좌표가
@@ -599,7 +599,7 @@ export function generatePathNodes(
           entrance.kind,
           [entranceEntry, ...facingEntriesSoFar],
           axisLock,
-          ['connector', 'landmark'],
+          ['landmark'],
         )
         facingEntriesSoFar.push(facingEntry)
         pairs.push({ a: entranceEntry, b: facingEntry })
@@ -610,7 +610,7 @@ export function generatePathNodes(
     // 벽이 안쪽으로 끝나는 지점(예: 칸막이 끝)은 실제로 손으로 더듬어 찾을 수 있는 안전한 건너기
     // 시작점이지만, 벽이 계속 이어지는 볼록 코너는 그냥 복도가 꺾이는 지점일 뿐이라 건너기 시작점으로
     // 안전하지 않다 — 여기서 건너기가 생기면 실제로는 벽을 만지는 중인데 갑자기 건너라고 안내하게 된다.
-    // 입구에 이미 병합된 코너는 kind가 'connector'/'landmark'로 바뀌어 있어 여기서 자동 제외된다.
+    // 입구에 이미 병합된 코너는 kind가 'landmark'로 바뀌어 있어 여기서 자동 제외된다.
     // 코너 하나당 건너기는 "가장 가까운 맞은편과 비슷한 길이"인 방향만 남긴다 — 한 코너에서 상하좌우
     // 여러 방향이 동시에 유효하면 예전엔 전부 만들었지만, 복잡한 벽 모양(계단식 요철 등)에서 인접한
     // 코너마다 각자 여러 방향으로 건너기를 만들면서 한 지점에 화살표가 무더기로 몰리는 문제가 있었다
@@ -637,7 +637,6 @@ export function generatePathNodes(
           continue
         const axisLock: { axis: 0 | 1; value: number } = { axis: fixedAxis, value: facingRaw[fixedAxis] }
         const facingEntry = findOrInsert(facingRaw, 'facing', undefined, [cornerEntry, ...facingEntriesSoFar], axisLock, [
-          'connector',
           'landmark',
         ])
         facingEntriesSoFar.push(facingEntry)
@@ -669,14 +668,14 @@ export function generatePathNodes(
     nodes.push(...componentNodes)
 
     // 벽선(폴리곤) 트레이싱은 실제로 경계 위(또는 아주 가까이)에 있는 점들끼리만 정렬 순서대로 이어야
-    // 한다 — 목적지/연결자처럼 방 안쪽 깊숙이 찍힌 점이 segmentIndex/t 정렬 순서상 중간에 끼어들면,
+    // 한다 — 목적지처럼 방 안쪽 깊숙이 찍힌 점이 segmentIndex/t 정렬 순서상 중간에 끼어들면,
     // 그 점의 실제 좌표(원래 찍힌 위치 그대로 씀)와 이웃 사이를 잇는 선이 방을 대각선으로 가로질러
-    // 버린다(실제로 발견된 버그). 입구(connector/landmark)가 벽에서 MAX_SNAP_PX보다 먼 경우(방 안쪽
+    // 버린다(실제로 발견된 버그). 입구(landmark)가 벽에서 MAX_SNAP_PX보다 먼 경우(방 안쪽
     // 깊숙한 목적지 등)만 원래 좌표를 그대로 쓰고 메인 벽 루프에서 뺀다 — 이런 점은 대신 가장 가까운
     // 경계 점 하나에만 짧게 연결한다. 그 범위 안이면(대부분의 경우) forceWallVertex로 이미 벽 선 위
     // 좌표로 스냅·삽입돼 있으므로(엔트런스 생성부 참고) 코너처럼 메인 루프에 낀다 — 직선이 코너A—
     // 목적지—코너B로 곧게 둘로 쪼개지길 원한다는 요청에 따른 것(실제 사용자 요청). 입구가 원래 있던
-    // 코너와 병합된 경우(isWallVertex=true, kind만 connector/landmark로 바뀜)도 마찬가지로 여전히 그
+    // 코너와 병합된 경우(isWallVertex=true, kind만 landmark로 바뀜)도 마찬가지로 여전히 그
     // 코너 자리이므로 메인 루프에서 빼면 안 된다 — 빼면 그 코너를 건너뛰고 양옆이 대각선으로 바로
     // 이어져 버린다(실제 발견된 문제). 코너/맞은편(facing)은 원래부터 벽 위의 지점이라 그대로 낀다.
     const isOnMainWallLoop = (entry: LoopEntry) => entry.isWallVertex && entry.distanceToLoop <= MERGE_RADIUS_PX

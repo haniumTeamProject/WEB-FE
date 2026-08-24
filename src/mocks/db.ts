@@ -1,4 +1,4 @@
-import type { Admin, Beacon, Building, Connector, Floor, Floorplan, Landmark } from '@/types/domain'
+import type { Admin, Beacon, Building, Floor, Floorplan, Landmark } from '@/types/domain'
 
 // 샘플 설계도 (자동추출된 것으로 간주) — 지도 검수 에디터 데모용 배경
 const sampleFloorplan =
@@ -32,7 +32,6 @@ const sampleOfficialDoc =
 export const db: {
   buildings: Building[]
   floors: Record<string, Floor[]>
-  connectors: Record<string, Connector[]>
   floorplans: Record<string, Floorplan>
   masks: Record<string, unknown>
   scales: Record<string, { scaleMPerPx: number }>
@@ -41,7 +40,7 @@ export const db: {
   landmarks: Record<string, Landmark[]>
   admins: Admin[]
 } = {
-  // status는 더 이상 시드로 넣지 않는다 — mocks/handlers.ts가 매 조회마다 실제 데이터(설계도·마스크·비콘·연결자)로부터 계산해 내려준다.
+  // status는 더 이상 시드로 넣지 않는다 — mocks/handlers.ts가 매 조회마다 실제 데이터(설계도·마스크·비콘)로부터 계산해 내려준다.
   buildings: [
     {
       id: 'suwon_ict',
@@ -70,11 +69,6 @@ export const db: {
   ],
   floors: {
     suwon_ict: [{ id: 'suwon_ict-4', buildingId: 'suwon_ict', floor: 4, major: 104 }],
-  },
-  connectors: {
-    suwon_ict: [
-      { id: 'conn_elv1', buildingId: 'suwon_ict', name: '엘리베이터 1호기', type: 'elevator', floors: [4], positions: [] },
-    ],
   },
   floorplans: {
     'suwon_ict-4': { floorId: 'suwon_ict-4', imageUrl: sampleFloorplan, extracted: true },

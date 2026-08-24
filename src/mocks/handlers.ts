@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import { db, nextId } from './db'
 import { majorForFloor } from '@/lib/utils'
-import type { Admin, Beacon, BeaconType, Building, Connector, Floor, FloorSetupStatus, Landmark } from '@/types/domain'
+import type { Admin, Beacon, BeaconType, Building, Floor, FloorSetupStatus, Landmark } from '@/types/domain'
 
 function floorMajor(floorId: string): number {
   for (const list of Object.values(db.floors)) {
@@ -9,10 +9,6 @@ function floorMajor(floorId: string): number {
     if (f) return f.major
   }
   return 0
-}
-
-function findBuildingIdForFloor(floorId: string): string | undefined {
-  return Object.keys(db.floors).find((buildingId) => db.floors[buildingId].some((f) => f.id === floorId))
 }
 
 // 정책 2.3: 층 세팅 상태는 저장해두고 수동으로 갱신하는 대신, 매 조회마다 실제 데이터로부터 계산한다 —
@@ -23,14 +19,6 @@ function computeFloorStatus(floorId: string): FloorSetupStatus {
   if (!db.scales[floorId]) return 'scale_missing'
   const beacons = db.beacons[floorId] ?? []
   if (beacons.length === 0) return 'beacon_missing'
-
-  const buildingId = findBuildingIdForFloor(floorId)
-  const floor = buildingId ? db.floors[buildingId].find((f) => f.id === floorId) : undefined
-  if (buildingId && floor) {
-    const connectorsForFloor = (db.connectors[buildingId] ?? []).filter((c) => c.floors.includes(floor.floor))
-    const missing = connectorsForFloor.some((c) => !c.positions?.some((p) => p.floorId === floorId))
-    if (missing) return 'connector_missing'
-  }
   return 'ready'
 }
 
@@ -39,7 +27,6 @@ const FLOOR_STATUS_PROGRESS: FloorSetupStatus[] = [
   'review_needed',
   'scale_missing',
   'beacon_missing',
-  'connector_missing',
   'ready',
 ]
 
@@ -196,59 +183,6 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 })
   }),
-
-  // ---- 수직 연결자 ----
-  http.get(`${base}/buildings/:id/connectors`, ({ params }) =>
-    HttpResponse.json(db.connectors[params.id as string] ?? []),
-  ),
-
-  http.post(`${base}/buildings/:id/connectors`, async ({ params, request }) => {
-    const buildingId = params.id as string
-    const body = (await request.json()) as Pick<Connector, 'name' | 'type' | 'floors'>
-    const connector: Connector = {
-      id: nextId('c'),
-      buildingId,
-      name: body.name,
-      type: body.type,
-      floors: (body.floors ?? []).slice().sort((a, b) => a - b),
-    }
-    db.connectors[buildingId] = [...(db.connectors[buildingId] ?? []), connector]
-    return HttpResponse.json(connector, { status: 201 })
-  }),
-
-  http.delete(`${base}/buildings/:buildingId/connectors/:connectorId`, ({ params }) => {
-    const list = db.connectors[params.buildingId as string]
-    if (list) {
-      db.connectors[params.buildingId as string] = list.filter((c) => c.id !== params.connectorId)
-    }
-    return new HttpResponse(null, { status: 204 })
-  }),
-
-  http.put(
-    `${base}/buildings/:buildingId/connectors/:connectorId/positions/:floorId`,
-    async ({ params, request }) => {
-      const { buildingId, connectorId, floorId } = params as Record<string, string>
-      const body = (await request.json()) as { x: number; y: number }
-      const list = db.connectors[buildingId]
-      const connector = list?.find((c) => c.id === connectorId)
-      if (!connector) return new HttpResponse(null, { status: 404 })
-      const positions = (connector.positions ?? []).filter((p) => p.floorId !== floorId)
-      connector.positions = [...positions, { floorId, x: body.x, y: body.y }]
-      return HttpResponse.json(connector)
-    },
-  ),
-
-  http.delete(
-    `${base}/buildings/:buildingId/connectors/:connectorId/positions/:floorId`,
-    ({ params }) => {
-      const { buildingId, connectorId, floorId } = params as Record<string, string>
-      const list = db.connectors[buildingId]
-      const connector = list?.find((c) => c.id === connectorId)
-      if (!connector) return new HttpResponse(null, { status: 404 })
-      connector.positions = (connector.positions ?? []).filter((p) => p.floorId !== floorId)
-      return HttpResponse.json(connector)
-    },
-  ),
 
   // ---- 설계도(Floorplan) ----
   http.get(`${base}/floors/:floorId/floorplan`, ({ params }) =>

@@ -34,7 +34,6 @@ export type FloorSetupStatus =
   | 'review_needed' // 검수 필요
   | 'scale_missing' // 축척 미설정
   | 'beacon_missing' // 비콘 미등록
-  | 'connector_missing' // 연결자 결손
   | 'ready' // 안내 가능
 
 export interface Floor {
@@ -45,24 +44,7 @@ export interface Floor {
   status?: FloorSetupStatus
 }
 
-export type ConnectorType = 'elevator' | 'stairs'
-
-export interface ConnectorPosition {
-  floorId: string
-  x: number // 설계도 좌표(900 기준)
-  y: number
-}
-
-export interface Connector {
-  id: string
-  buildingId: string
-  name: string
-  type: ConnectorType
-  floors: number[] // 운행 층
-  positions?: ConnectorPosition[] // 층별 입구 좌표
-}
-
-// semantic(의미비콘): 앵커·코너·수직연결자입구·랜드마크출입구·복도끝 등 경로상 의미 있는 지점
+// semantic(의미비콘): 앵커·코너·엘리베이터/계단 목적지·랜드마크출입구·복도끝 등 경로상 의미 있는 지점
 // reinforcement(보강비콘): 의미비콘 사이 간격이 D_max(6m)를 넘을 때 채워 넣는 비콘
 export type BeaconType = 'semantic' | 'reinforcement'
 
