@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dedupeClosePlanItems, findAdjacentPairs, nearestWalkable } from './reinforcementBeacons'
+import { applyLocalPlacementRules, dedupeClosePlanItems, findAdjacentPairs, nearestWalkable } from './reinforcementBeacons'
 
 function buildMask(w: number, h: number, isWalkable: (x: number, y: number) => boolean): Uint8Array {
   const walkable = new Uint8Array(w * h)
@@ -193,5 +193,36 @@ describe('dedupeClosePlanItems', () => {
     const existingSemanticPoints = [{ x: 11, y: 0 }]
     const result = dedupeClosePlanItems(items, 1, existingSemanticPoints)
     expect(result).toHaveLength(0)
+  })
+})
+
+describe('applyLocalPlacementRules', () => {
+  it('어느 방향으로도 2m 안에 벽이 없으면(뻥 뚫린 공간 한복판) 버린다', () => {
+    const w = 220
+    const h = 220
+    const walkable = buildMask(w, h, (x, y) => x >= 10 && x < 210 && y >= 10 && y < 210) // 200x200 방
+    // 정중앙 — 어느 벽까지도 100px(scaleMPerPx=0.05 기준 5m), 근접 반경(2m=40px) 훨씬 밖
+    const result = applyLocalPlacementRules(110, 110, w, h, walkable, 0.05)
+    expect(result).toBeNull()
+  })
+
+  it('벽 근처(2m 이내)면 버리지 않고, 복도(방)가 넓으면(4m 이상) 원래 좌표를 그대로 돌려준다', () => {
+    const w = 220
+    const h = 220
+    const walkable = buildMask(w, h, (x, y) => x >= 10 && x < 210 && y >= 10 && y < 210) // 200x200 방
+    // 왼쪽 벽(x=9)에서 6px(0.3m) — 근접 반경 안이라 안 버려지고, 방이 넓어(10m) 좁은 복도 스냅도 안 걸림
+    const result = applyLocalPlacementRules(15, 110, w, h, walkable, 0.05)
+    expect(result).toEqual({ x: 15, y: 110 })
+  })
+
+  it('복도 폭(수직/수평 중 짧은 쪽)이 4m보다 좁으면 정중앙으로 스냅한다', () => {
+    const w = 220
+    const h = 80
+    // 가로로 긴 복도: 세로 폭 60px(scaleMPerPx=0.05 기준 3m, 좁음) · 가로는 200px(10m, 넓음)
+    const walkable = buildMask(w, h, (x, y) => x >= 10 && x < 210 && y >= 10 && y < 70)
+    // 위쪽 벽(y=9)에서 11px만 떨어진, 세로로 치우친 위치
+    const result = applyLocalPlacementRules(110, 20, w, h, walkable, 0.05)
+    // 세로 복도 폭은 y=9(위 벽)~y=70(아래 벽) 사이 — 정중앙(y=39.5)으로 스냅되고 가로(x)는 안 바뀐다
+    expect(result).toEqual({ x: 110, y: 39.5 })
   })
 })
