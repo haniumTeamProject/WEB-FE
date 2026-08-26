@@ -28,7 +28,11 @@ const DESIGN_W = 900 // 비콘/랜드마크 좌표 기준 폭 — FloorMapCanvas
 // 이 이상은 안 키우도록 상한을 둔다.
 const MAX_CANVAS_W = 1000
 
-const DEFAULT_CROSSING_MAX_M = 3 // 축척 미설정 시 기본 횡단 가능 거리(대략 60px 상당)
+// 횡단(벽 없는 열린 공간을 가로질러 맞은편으로 건너가라고 안내하는) 허용 최대 폭 — 관리자 설정 없이
+// 3m로 고정한다. 시각장애인은 건너는 동안 짚을 벽·트레일링 기준이 없어, 폭이 넓을수록 직진 이탈로
+// 맞은편 도착점을 놓치기 쉽다. '복도 = 폭 ≤3m' 정의와도 일치. 드물게 더 넓은 곳을 건너야 하면
+// 관리자가 '건너기 추가' 도구로 직접 그으면 된다.
+const CROSSING_MAX_M = 3
 const MIN_CORNER_CLEARANCE_M = 0.3 // 코너 횡단 좌우 최소 여유 — 이보다 벽이 가까우면 벽을 타는 걸로 보고 안 만든다
 const DEFAULT_CROSS_PENALTY_M = 5 // 건너기 페널티 기본값 — 이만큼 이상 절약될 때만 건넘
 
@@ -82,7 +86,6 @@ export default function PathNodePage() {
   const { data: landmarks } = useLandmarks(floorId)
   const { data: savedPathNodes } = usePathNodes(floorId)
   const savePathNodesMutation = useSavePathNodes(floorId)
-  const [crossingMaxM, setCrossingMaxM] = useState(String(DEFAULT_CROSSING_MAX_M))
   const [minClearanceM, setMinClearanceM] = useState(String(MIN_CORNER_CLEARANCE_M))
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -267,9 +270,9 @@ export default function PathNodePage() {
           .map((l) => ({ x: (l.x as number) * maskScale, y: (l.y as number) * maskScale, kind: 'landmark' as const })),
       ]
       // PathNode 좌표는 저장된 마스크와 동일한 픽셀 공간이라 축척(scaleMPerPx)을 별도 비율 보정 없이 바로 쓸 수 있다.
-      const crossingM = Number(crossingMaxM)
-      const crossingMaxPx =
-        savedScale && Number.isFinite(crossingM) && crossingM > 0 ? crossingM / savedScale.scaleMPerPx : undefined
+      // 횡단 허용 폭은 3m 고정(CROSSING_MAX_M). 축척이 없으면 undefined로 넘겨 generatePathNodes의
+      // 기본값(약 3m 상당 60px)이 쓰이게 한다.
+      const crossingMaxPx = savedScale ? CROSSING_MAX_M / savedScale.scaleMPerPx : undefined
       // 코너(벽 끝) 횡단의 옆(수직 방향) 여유가 이 거리보다 좁으면, 벽을 타면 바로 닿는 곳이라 판단해
       // 그 방향은 횡단으로 안내하지 않는다. 이 검사는 건너기 방향과 정확히 좌우/상하인 벽만 감지하므로,
       // 벽이 사선으로 나 있으면 값을 키워야 걸러질 수 있다.
@@ -714,27 +717,14 @@ export default function PathNodePage() {
           </div>
 
           <div className="mt-4">
-            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-1">
               횡단 가능한 최대 거리
-              <InfoTooltip text="복도 건너편까지의 거리가 이 값보다 멀면 횡단 엣지를 만들지 않아요. 값을 키우면 넓은 홀이나 로비도 건너뛸 수 있게 되고, 줄이면 폭이 좁은 곳에서만 횡단 엣지가 생겨요." />
+              <InfoTooltip text="벽 없는 열린 공간을 가로질러 맞은편으로 건너가라고 안내할 수 있는 최대 폭이에요. 시각장애인이 건너는 동안 짚을 벽이 없어 폭이 넓을수록 위험하므로 3m로 고정했습니다(복도 폭 정의와 동일). 더 넓은 곳을 건너야 하면 아래 '건너기 추가'로 직접 그으세요." />
             </span>
-            <div className="flex items-center gap-2">
-              <span className="text-[12px] text-muted">최대</span>
-              <input
-                type="number"
-                min={0.1}
-                step={0.5}
-                value={crossingMaxM}
-                onChange={(e) => setCrossingMaxM(e.target.value)}
-                className="w-16 h-9 px-2 rounded-lg border border-line bg-field text-sm outline-none text-right"
-              />
-              <span className="text-[12px] text-muted">m</span>
-            </div>
-            {!savedScale && (
-              <p className="text-[12px] text-muted mt-1">
-                축척이 아직 없어 기본값(약 {DEFAULT_CROSSING_MAX_M}m 상당)으로 계산됩니다.
-              </p>
-            )}
+            <p className="text-[13px]">
+              <span className="font-medium">{CROSSING_MAX_M}m</span>
+              <span className="text-[12px] text-muted"> (고정)</span>
+            </p>
           </div>
 
           <div className="mt-4">
