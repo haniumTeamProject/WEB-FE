@@ -26,7 +26,8 @@ import { StepFooter } from '@/components/layout/StepNav'
 // 이득이 적다).
 const CANVAS_W = 2400
 const FILL: [number, number, number, number] = [75, 112, 229, 120] // 이동영역(반투명 파랑)
-const BARRIER_R = 6 // 벽 펜 반경(px) — CANVAS_W 상향(760→2400)에 맞춰 비례 조정
+const BARRIER_R = 5 // 벽 펜 반경(px) — CANVAS_W 상향(760→2400)에 맞춰 비례 조정, 기존 6px에서 75%로 축소
+const WALL_SNAP_ANGLE_RAD = (Math.PI / 180) * 30 // 벽 그리기 드래그를 스냅할 각도 간격(30도)
 // 화면 표시 폭을 컨테이너 폭에 그대로 맞추면, 아주 넓은 모니터에서는 높이도 같은 비율로 커져서(원본
 // 비율은 유지되니 찌그러지진 않지만) 그림 전체가 지나치게 거대해져 스크롤을 많이 해야 한다(실제
 // 발견된 문제, 종합확인 화면과 동일한 원인). 이 이상은 안 키우도록 상한을 둔다.
@@ -61,6 +62,7 @@ export default function MapReviewPage() {
   const redoRef = useRef<{ w: Uint8Array; b: Uint8Array }[]>([])
   const drawingRef = useRef(false)
   const lastRef = useRef<{ x: number; y: number } | null>(null)
+  const wallAnchorRef = useRef<{ x: number; y: number } | null>(null) // 벽 그리기 드래그 시작점(각도 스냅 기준)
   const scalePointsRef = useRef<{ x: number; y: number }[]>([]) // 축척 측정용 두 점(계산 후 저장하지 않음)
   const scaleHoverRef = useRef<{ x: number; y: number } | null>(null) // 두 번째 점 스냅 미리보기
   const areaStartRef = useRef<{ x: number; y: number } | null>(null) // 사각형 채우기/지우개 드래그 시작점
@@ -130,6 +132,18 @@ export default function MapReviewPage() {
     const dx = raw.x - anchor.x
     const dy = raw.y - anchor.y
     return Math.abs(dx) >= Math.abs(dy) ? { x: raw.x, y: anchor.y } : { x: anchor.x, y: raw.y }
+  }
+
+  // 벽 그리기는 손으로 그은 자유곡선이라 살짝만 삐뚤어도 문틀이 비스듬하게 막힌다 — 드래그 시작점
+  // 기준 방향을 30도 간격(12방향) 중 가장 가까운 쪽으로 스냅해서, 한 번의 드래그가 항상 하나의 반듯한
+  // 직선(정확히 0/30/60/90도 등)으로 나오게 한다.
+  function snapToAngle(from: { x: number; y: number }, to: { x: number; y: number }) {
+    const dx = to.x - from.x
+    const dy = to.y - from.y
+    const dist = Math.hypot(dx, dy)
+    if (dist === 0) return to
+    const angle = Math.round(Math.atan2(dy, dx) / WALL_SNAP_ANGLE_RAD) * WALL_SNAP_ANGLE_RAD
+    return { x: Math.round(from.x + dist * Math.cos(angle)), y: Math.round(from.y + dist * Math.sin(angle)) }
   }
 
   // 측정 중인 축척 두 점 + 연결선 + 실시간 px 거리 라벨을 마스크 위에 그림(저장 대상 아님, 화면 표시용)
@@ -510,6 +524,7 @@ export default function MapReviewPage() {
       drawingRef.current = true
       pushHistory()
       const { x, y } = getXY(e)
+      wallAnchorRef.current = { x, y }
       lastRef.current = { x, y }
       stampDisc(x, y)
       redraw()
@@ -540,10 +555,17 @@ export default function MapReviewPage() {
       return
     }
     if (tool === 'wall' && drawingRef.current) {
-      const { x, y } = getXY(e)
-      const from = lastRef.current ?? { x, y }
-      stampLine(from.x, from.y, x, y)
+      const raw = getXY(e)
+      const anchor = wallAnchorRef.current ?? raw
+      // 매 이동마다 이 드래그 시작 전 상태(pushHistory로 남긴 스냅샷)로 되돌린 뒤, 시작점에서 스냅된
+      // 각도로 선 하나만 다시 찍는다 — 안 그러면 손이 흔들려 스냅 각도가 도중에 바뀔 때마다 이전
+      // 각도로 찍힌 벽이 남아서 선이 여러 조각으로 꺾여 보인다(실제 발견된 문제).
+      const base = historyRef.current.at(-1)
+      if (base) barrierRef.current = base.b.slice()
+      const { x, y } = snapToAngle(anchor, raw)
+      stampLine(anchor.x, anchor.y, x, y)
       lastRef.current = { x, y }
+      rebuildMask()
       redraw()
       return
     }
