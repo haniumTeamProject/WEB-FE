@@ -77,7 +77,7 @@ export default function MapReviewPage() {
   const [spaceHeld, setSpaceHeld] = useState(false)
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
   const [tool, setTool] = useState<Tool>('fill')
-  const [threshold, setThreshold] = useState(240) // 이보다 어두운 픽셀 = 벽(경계)
+  const [threshold, setThreshold] = useState(250) // 이보다 어두운 픽셀 = 벽(경계) — 실사용상 높게(공격적 벽 인식) 쓰는 게 기본
   const [scaleModalOpen, setScaleModalOpen] = useState(false)
   const [distanceInput, setDistanceInput] = useState('')
   const [distanceError, setDistanceError] = useState<string | null>(null)
@@ -871,8 +871,8 @@ export default function MapReviewPage() {
             </span>
             <input
               type="range"
-              min={120}
-              max={250}
+              min={150}
+              max={255}
               value={threshold}
               onChange={(e) => setThreshold(Number(e.target.value))}
               className="w-full"
