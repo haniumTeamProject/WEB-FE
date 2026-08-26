@@ -32,6 +32,9 @@ export default function BuildingDetailPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
+            <Link to={`/buildings/${buildingId}/connectors`}>
+              <Button variant="outline">수직 연결자</Button>
+            </Link>
             <Link to={`/buildings/${buildingId}/floors`}>
               <Button variant="outline">층 관리</Button>
             </Link>
@@ -59,6 +62,11 @@ export default function BuildingDetailPage() {
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/map`}>
                   <Button variant="outline" className="whitespace-nowrap" style={{ height: 34, padding: '0 12px' }}>
                     지도 검수
+                  </Button>
+                </Link>
+                <Link to={`/buildings/${buildingId}/floors/${f.id}/connectors`}>
+                  <Button variant="outline" className="whitespace-nowrap" style={{ height: 34, padding: '0 12px' }}>
+                    수직연결자
                   </Button>
                 </Link>
                 <Link to={`/buildings/${buildingId}/floors/${f.id}/landmarks`}>

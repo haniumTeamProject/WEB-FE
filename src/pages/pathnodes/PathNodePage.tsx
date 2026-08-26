@@ -6,6 +6,7 @@ import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
 import { useFloorplan } from '@/features/floorplan/hooks'
 import { useMask, usePathNodes, useSavePathNodes, useScale } from '@/features/mapEditor/hooks'
+import { useConnectors } from '@/features/connectors/hooks'
 import { useLandmarks } from '@/features/landmarks/hooks'
 import { generatePathNodes } from '@/features/mapEditor/pathNodes'
 import type { EntrancePoint, PathEdge, PathNode } from '@/features/mapEditor/pathNodes'
@@ -62,6 +63,7 @@ export default function PathNodePage() {
   const { data: floorplan, isLoading } = useFloorplan(floorId)
   const { data: savedMask } = useMask(floorId)
   const { data: savedScale } = useScale(floorId)
+  const { data: connectors } = useConnectors(buildingId)
   const { data: landmarks } = useLandmarks(floorId)
   const { data: savedPathNodes } = usePathNodes(floorId)
   const savePathNodesMutation = useSavePathNodes(floorId)
@@ -239,6 +241,9 @@ export default function PathNodePage() {
       const mask = await decodeMask(savedMask.dataUrl, dims.w, dims.h)
       const maskScale = dims.w / DESIGN_W
       const entrances: EntrancePoint[] = [
+        ...(connectors ?? [])
+          .flatMap((c) => c.positions?.filter((p) => p.floorId === floorId) ?? [])
+          .map((p) => ({ x: p.x * maskScale, y: p.y * maskScale, kind: 'connector' as const })),
         ...(landmarks ?? [])
           .filter((l) => l.x != null && l.y != null)
           .map((l) => ({ x: (l.x as number) * maskScale, y: (l.y as number) * maskScale, kind: 'landmark' as const })),
@@ -631,6 +636,7 @@ export default function PathNodePage() {
           <div className="flex flex-wrap gap-3 mt-2 text-[12px] text-muted">
             <span style={{ color: '#7c3aed' }}>● 코너</span>
             <span style={{ color: '#db2777' }}>● 벽 모서리(건너기 지점)</span>
+            <span style={{ color: '#2563eb' }}>● 연결자 입구</span>
             <span style={{ color: '#f2992e' }}>● 목적지 출입구</span>
             <span>○ 맞은편 지점</span>
             <span style={{ color: '#16a34a' }}>┄ 횡단 엣지</span>

@@ -132,10 +132,10 @@ describe('isCrossEdgeUsable', () => {
     expect(isCrossEdgeUsable(landmark, 'OTHER')).toBe(false)
   })
 
-  it('코너·맞은편(facing) 노드는 출발지 여부와 무관하게 항상 건너기를 쓸 수 있다', () => {
+  it('코너·연결자 노드는 출발지 여부와 무관하게 항상 건너기를 쓸 수 있다', () => {
     const corner = node('C', 0, 0)
-    const facing = { id: 'V', x: 0, y: 0, type: 'facing' as const, concave: false }
+    const connector = { id: 'V', x: 0, y: 0, type: 'connector' as const, concave: false }
     expect(isCrossEdgeUsable(corner, 'OTHER')).toBe(true)
-    expect(isCrossEdgeUsable(facing, 'OTHER')).toBe(true)
+    expect(isCrossEdgeUsable(connector, 'OTHER')).toBe(true)
   })
 })

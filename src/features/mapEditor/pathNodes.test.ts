@@ -183,11 +183,11 @@ describe('generatePathNodes entrance facing (상하좌우 4방향)', () => {
     }
   })
 
-  it('does not create a diagonal edge when a landmark snaps onto a concave corner it sits right next to (실제 발견된 버그)', () => {
-    // 목적지가 오목 코너(10,50) 바로 옆(12,52)에 있으면, 벽선 스냅 우선순위 때문에 그 코너와 병합된다
+  it('does not create a diagonal edge when a connector snaps onto a concave corner it sits right next to (실제 발견된 버그)', () => {
+    // 연결자가 오목 코너(10,50) 바로 옆(12,52)에 있으면, 벽선 스냅 우선순위 때문에 그 코너와 병합된다
     // — 병합된 노드는 코너의 원래 위치(10,50)를 쓰는데, 맞은편 탐색을 여전히 병합 전 좌표(12,52
     // 근처)에서 하면 노드 위치와 캐스팅 원점이 어긋나 건너기 엣지가 사선이 된다. 또한 병합된 노드가
-    // kind만 landmark로 바뀌었다고 메인 벽 루프에서 빠지면, 그 코너 자리를 건너뛰고 양옆 코너끼리
+    // kind만 connector로 바뀌었다고 메인 벽 루프에서 빠지면, 그 코너 자리를 건너뛰고 양옆 코너끼리
     // 대각선으로 바로 이어져 버린다 — 둘 다 실제로 발견된 버그다.
     const W = 80
     const H = 80
@@ -198,7 +198,7 @@ describe('generatePathNodes entrance facing (상하좌우 4방향)', () => {
     rect(0, 0, 10, 60)
     rect(0, 50, 60, 60)
 
-    const entrance = { x: 12, y: 52, kind: 'landmark' as const }
+    const entrance = { x: 12, y: 52, kind: 'connector' as const }
     const { nodes, edges } = generatePathNodes(mask, W, H, [entrance])
     const byId = new Map(nodes.map((n) => [n.id, n]))
 
@@ -207,10 +207,10 @@ describe('generatePathNodes entrance facing (상하좌우 4방향)', () => {
       const b = byId.get(e.b)!
       if (e.type === 'wall') expect(a.x === b.x || a.y === b.y).toBe(true)
     }
-    const landmark = nodes.find((n) => n.type === 'landmark')
-    expect(landmark).toBeTruthy()
-    const crossFromLandmark = edges.filter((e) => e.type === 'cross' && (e.a === landmark!.id || e.b === landmark!.id))
-    for (const e of crossFromLandmark) {
+    const connector = nodes.find((n) => n.type === 'connector')
+    expect(connector).toBeTruthy()
+    const crossFromConnector = edges.filter((e) => e.type === 'cross' && (e.a === connector!.id || e.b === connector!.id))
+    for (const e of crossFromConnector) {
       const a = byId.get(e.a)!
       const b = byId.get(e.b)!
       expect(a.x === b.x || a.y === b.y).toBe(true)
@@ -556,7 +556,7 @@ describe('generatePathNodes wall boundary tracing', () => {
       if (e.type !== 'wall') return false
       const a = byId.get(e.a)!
       const b = byId.get(e.b)!
-      return a.type !== 'landmark' && b.type !== 'landmark'
+      return a.type !== 'landmark' && a.type !== 'connector' && b.type !== 'landmark' && b.type !== 'connector'
     })
     expect(boundaryWallEdges.length).toBeGreaterThan(0)
     for (const e of boundaryWallEdges) {
