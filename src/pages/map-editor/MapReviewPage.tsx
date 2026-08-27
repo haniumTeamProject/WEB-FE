@@ -26,7 +26,8 @@ import { StepFooter } from '@/components/layout/StepNav'
 // 이득이 적다).
 const CANVAS_W = 2400
 const FILL: [number, number, number, number] = [75, 112, 229, 120] // 이동영역(반투명 파랑)
-const BARRIER_R = 6 // 벽 펜 반경(px) — CANVAS_W 상향(760→2400)에 맞춰 비례 조정
+const BARRIER_R = 5 // 벽 펜 반경(px) — CANVAS_W 상향(760→2400)에 맞춰 비례 조정, 기존 6px에서 75%로 축소
+const WALL_SNAP_ANGLE_RAD = (Math.PI / 180) * 30 // 벽 그리기 드래그를 스냅할 각도 간격(30도)
 // 화면 표시 폭을 컨테이너 폭에 그대로 맞추면, 아주 넓은 모니터에서는 높이도 같은 비율로 커져서(원본
 // 비율은 유지되니 찌그러지진 않지만) 그림 전체가 지나치게 거대해져 스크롤을 많이 해야 한다(실제
 // 발견된 문제, 종합확인 화면과 동일한 원인). 이 이상은 안 키우도록 상한을 둔다.
@@ -34,9 +35,9 @@ const MAX_DISPLAY_W = 1000
 const ZOOM_MIN = 1 // 기본 화면(맞춤 배율) 밑으로는 축소 못 하게
 const ZOOM_MAX = 8
 
-// 드래그 자체가 도구 동작인 건 벽 그리기·영역 그리기·지우기뿐이다 — 이것들만 배경 드래그로 그리기/
-// 선택을 하고, 나머지(채우기·축척·도구 미선택)는 다른 화면들처럼 배경을 드래그하면 바로 화면 이동이 된다.
-type Tool = 'fill' | 'drawArea' | 'wall' | 'erase' | 'scale' | 'pan' | null
+// 드래그 자체가 도구 동작인 건 벽 그리기·영역 그리기뿐이다 — 이것들만 배경 드래그로 그리고, 나머지
+// (채우기·축척·도구 미선택)는 다른 화면들처럼 배경을 드래그하면 바로 화면 이동이 된다.
+type Tool = 'fill' | 'drawArea' | 'wall' | 'scale' | 'pan' | null
 const PAN_DRAG_THRESHOLD_PX = 4 // 이 정도는 움직여야 '클릭'이 아니라 '드래그(이동)'로 간주
 
 export default function MapReviewPage() {
@@ -61,9 +62,10 @@ export default function MapReviewPage() {
   const redoRef = useRef<{ w: Uint8Array; b: Uint8Array }[]>([])
   const drawingRef = useRef(false)
   const lastRef = useRef<{ x: number; y: number } | null>(null)
+  const wallAnchorRef = useRef<{ x: number; y: number } | null>(null) // 벽 그리기 드래그 시작점(각도 스냅 기준)
   const scalePointsRef = useRef<{ x: number; y: number }[]>([]) // 축척 측정용 두 점(계산 후 저장하지 않음)
   const scaleHoverRef = useRef<{ x: number; y: number } | null>(null) // 두 번째 점 스냅 미리보기
-  const areaStartRef = useRef<{ x: number; y: number } | null>(null) // 사각형 채우기/지우개 드래그 시작점
+  const areaStartRef = useRef<{ x: number; y: number } | null>(null) // 사각형 영역 그리기 드래그 시작점
   const areaCurrentRef = useRef<{ x: number; y: number } | null>(null)
   const panDragRef = useRef<{ startClientX: number; startClientY: number; startPanX: number; startPanY: number } | null>(
     null,
@@ -75,7 +77,7 @@ export default function MapReviewPage() {
   const [spaceHeld, setSpaceHeld] = useState(false)
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
   const [tool, setTool] = useState<Tool>('fill')
-  const [threshold, setThreshold] = useState(240) // 이보다 어두운 픽셀 = 벽(경계)
+  const [threshold, setThreshold] = useState(250) // 이보다 어두운 픽셀 = 벽(경계) — 실사용상 높게(공격적 벽 인식) 쓰는 게 기본
   const [scaleModalOpen, setScaleModalOpen] = useState(false)
   const [distanceInput, setDistanceInput] = useState('')
   const [distanceError, setDistanceError] = useState<string | null>(null)
@@ -132,6 +134,18 @@ export default function MapReviewPage() {
     return Math.abs(dx) >= Math.abs(dy) ? { x: raw.x, y: anchor.y } : { x: anchor.x, y: raw.y }
   }
 
+  // 벽 그리기는 손으로 그은 자유곡선이라 살짝만 삐뚤어도 문틀이 비스듬하게 막힌다 — 드래그 시작점
+  // 기준 방향을 30도 간격(12방향) 중 가장 가까운 쪽으로 스냅해서, 한 번의 드래그가 항상 하나의 반듯한
+  // 직선(정확히 0/30/60/90도 등)으로 나오게 한다.
+  function snapToAngle(from: { x: number; y: number }, to: { x: number; y: number }) {
+    const dx = to.x - from.x
+    const dy = to.y - from.y
+    const dist = Math.hypot(dx, dy)
+    if (dist === 0) return to
+    const angle = Math.round(Math.atan2(dy, dx) / WALL_SNAP_ANGLE_RAD) * WALL_SNAP_ANGLE_RAD
+    return { x: Math.round(from.x + dist * Math.cos(angle)), y: Math.round(from.y + dist * Math.sin(angle)) }
+  }
+
   // 측정 중인 축척 두 점 + 연결선 + 실시간 px 거리 라벨을 마스크 위에 그림(저장 대상 아님, 화면 표시용)
   function drawScaleOverlay(ctx: CanvasRenderingContext2D) {
     const pts = scalePointsRef.current
@@ -172,9 +186,9 @@ export default function MapReviewPage() {
     ctx.restore()
   }
 
-  // 사각형 채우기/지우개 드래그 중인 영역 미리보기
+  // 사각형 영역 그리기 드래그 중인 영역 미리보기
   function drawAreaOverlay(ctx: CanvasRenderingContext2D) {
-    if (tool !== 'drawArea' && tool !== 'erase') return
+    if (tool !== 'drawArea') return
     const s = areaStartRef.current
     const c = areaCurrentRef.current
     if (!s || !c) return
@@ -183,13 +197,8 @@ export default function MapReviewPage() {
     const w = Math.abs(c.x - s.x)
     const h = Math.abs(c.y - s.y)
     ctx.save()
-    if (tool === 'drawArea') {
-      ctx.strokeStyle = 'rgba(75,112,229,0.9)'
-      ctx.fillStyle = 'rgba(75,112,229,0.15)'
-    } else {
-      ctx.strokeStyle = 'rgba(55,65,81,0.85)'
-      ctx.fillStyle = 'rgba(55,65,81,0.12)'
-    }
+    ctx.strokeStyle = 'rgba(75,112,229,0.9)'
+    ctx.fillStyle = 'rgba(75,112,229,0.15)'
     ctx.lineWidth = 1.5
     ctx.setLineDash([5, 4])
     ctx.fillRect(x0, y0, w, h)
@@ -286,12 +295,11 @@ export default function MapReviewPage() {
     }
   }
 
-  // 사각형 영역을 통행영역으로 채우거나(add) 완전히 지운다(마스크+벽 둘 다 제거)
-  function applyRectArea(x0: number, y0: number, x1: number, y1: number, add: boolean) {
+  // 사각형 영역을 통행영역으로 채운다(마스크 walkable=1). 벽(barrier)은 건드리지 않는다.
+  function applyRectArea(x0: number, y0: number, x1: number, y1: number) {
     const base = baseCanvasRef.current
     const wk = walkableRef.current
-    const br = barrierRef.current
-    if (!base || !wk || !br) return
+    if (!base || !wk) return
     const w = base.width
     const h = base.height
     const xlo = Math.max(0, Math.min(Math.round(x0), Math.round(x1)))
@@ -300,9 +308,7 @@ export default function MapReviewPage() {
     const yhi = Math.min(h - 1, Math.max(Math.round(y0), Math.round(y1)))
     for (let y = ylo; y <= yhi; y++) {
       for (let x = xlo; x <= xhi; x++) {
-        const idx = y * w + x
-        wk[idx] = add ? 1 : 0
-        if (!add) br[idx] = 0
+        wk[y * w + x] = 1
       }
     }
   }
@@ -510,12 +516,13 @@ export default function MapReviewPage() {
       drawingRef.current = true
       pushHistory()
       const { x, y } = getXY(e)
+      wallAnchorRef.current = { x, y }
       lastRef.current = { x, y }
       stampDisc(x, y)
       redraw()
       return
     }
-    if (tool === 'drawArea' || tool === 'erase') {
+    if (tool === 'drawArea') {
       const { x, y } = getXY(e)
       areaStartRef.current = { x, y }
       areaCurrentRef.current = { x, y }
@@ -540,14 +547,21 @@ export default function MapReviewPage() {
       return
     }
     if (tool === 'wall' && drawingRef.current) {
-      const { x, y } = getXY(e)
-      const from = lastRef.current ?? { x, y }
-      stampLine(from.x, from.y, x, y)
+      const raw = getXY(e)
+      const anchor = wallAnchorRef.current ?? raw
+      // 매 이동마다 이 드래그 시작 전 상태(pushHistory로 남긴 스냅샷)로 되돌린 뒤, 시작점에서 스냅된
+      // 각도로 선 하나만 다시 찍는다 — 안 그러면 손이 흔들려 스냅 각도가 도중에 바뀔 때마다 이전
+      // 각도로 찍힌 벽이 남아서 선이 여러 조각으로 꺾여 보인다(실제 발견된 문제).
+      const base = historyRef.current.at(-1)
+      if (base) barrierRef.current = base.b.slice()
+      const { x, y } = snapToAngle(anchor, raw)
+      stampLine(anchor.x, anchor.y, x, y)
       lastRef.current = { x, y }
+      rebuildMask()
       redraw()
       return
     }
-    if ((tool === 'drawArea' || tool === 'erase') && areaStartRef.current) {
+    if (tool === 'drawArea' && areaStartRef.current) {
       areaCurrentRef.current = getXY(e)
       redraw()
       return
@@ -569,15 +583,9 @@ export default function MapReviewPage() {
       redraw()
       return
     }
-    if ((tool === 'drawArea' || tool === 'erase') && areaStartRef.current && areaCurrentRef.current) {
+    if (tool === 'drawArea' && areaStartRef.current && areaCurrentRef.current) {
       pushHistory()
-      applyRectArea(
-        areaStartRef.current.x,
-        areaStartRef.current.y,
-        areaCurrentRef.current.x,
-        areaCurrentRef.current.y,
-        tool === 'drawArea',
-      )
+      applyRectArea(areaStartRef.current.x, areaStartRef.current.y, areaCurrentRef.current.x, areaCurrentRef.current.y)
       areaStartRef.current = null
       areaCurrentRef.current = null
       rebuildMask()
@@ -591,7 +599,7 @@ export default function MapReviewPage() {
       dragMovedRef.current = false
       return
     }
-    if (panActive || tool === 'wall' || tool === 'drawArea' || tool === 'erase') return // 드래그로 처리
+    if (panActive || tool === 'wall' || tool === 'drawArea') return // 드래그로 처리
     const { x, y } = getXY(e)
     if (tool === 'scale') {
       const pts = scalePointsRef.current
@@ -815,7 +823,6 @@ export default function MapReviewPage() {
           <div className="grid gap-2">
             {toolBtn('fill', '영역 채우기')}
             {toolBtn('drawArea', '영역 그리기 (사각형)')}
-            {toolBtn('erase', '영역 지우기 (사각형)')}
             {toolBtn('wall', '벽 그리기 (틈 막기)')}
             {toolBtn('scale', '축척 설정')}
             {toolBtn('pan', '화면 이동')}
@@ -849,8 +856,8 @@ export default function MapReviewPage() {
             </span>
             <input
               type="range"
-              min={120}
-              max={250}
+              min={150}
+              max={255}
               value={threshold}
               onChange={(e) => setThreshold(Number(e.target.value))}
               className="w-full"

@@ -9,8 +9,10 @@ export interface PathfindResult {
 // — 최단경로 탐색(findShortestPath)뿐 아니라 "출발지에서 도달 가능한 노드" 진단에도 똑같이 적용해야
 // 한다. 안 그러면 실제로는 findShortestPath가 절대 쓰지 않을 건너기인데도 진단에서는 "도달 가능"으로
 // 표시되는 불일치가 생긴다(실제 발견된 문제 — 관리자가 경로노드 화면에서 확인할 때 혼란스러움).
+// 수직연결자(connector)도 목적지와 마찬가지로 실제 출입구라, 같은 제약을 건다(실제 요청) — 코너는
+// 실제 출입구가 아니라 순전히 벽 형태상의 지점이라 이 제약과 무관하게 항상 건널 수 있다.
 export function isCrossEdgeUsable(a: Pick<PathNode, 'id' | 'type'>, startId: string): boolean {
-  return a.type !== 'landmark' || a.id === startId
+  return (a.type !== 'landmark' && a.type !== 'connector') || a.id === startId
 }
 
 // 다익스트라. 그래프가 작아서(수십~수백 노드) 우선순위 큐 없이 O(V^2)로 충분하다.

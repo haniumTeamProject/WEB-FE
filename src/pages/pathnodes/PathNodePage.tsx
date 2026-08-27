@@ -9,7 +9,7 @@ import { useMask, usePathNodes, useSavePathNodes, useScale } from '@/features/ma
 import { useConnectors } from '@/features/connectors/hooks'
 import { useLandmarks } from '@/features/landmarks/hooks'
 import { generatePathNodes } from '@/features/mapEditor/pathNodes'
-import type { EntrancePoint, PathEdge, PathNode } from '@/features/mapEditor/pathNodes'
+import type { EdgeKind, EntrancePoint, PathEdge, PathNode } from '@/features/mapEditor/pathNodes'
 import { findShortestPath, isCrossEdgeUsable } from '@/features/mapEditor/pathfind'
 import { pathNodesStorageKey, readStoredPathNodes } from '@/features/mapEditor/pathNodesStorage'
 import type { StoredPathNodes } from '@/features/mapEditor/pathNodesStorage'
@@ -28,9 +28,28 @@ const DESIGN_W = 900 // 비콘/랜드마크 좌표 기준 폭 — FloorMapCanvas
 // 이 이상은 안 키우도록 상한을 둔다.
 const MAX_CANVAS_W = 1000
 
-const DEFAULT_CROSSING_MAX_M = 3 // 축척 미설정 시 기본 횡단 가능 거리(대략 60px 상당)
+// 횡단(벽 없는 열린 공간을 가로질러 맞은편으로 건너가라고 안내하는) 허용 최대 폭 — 관리자 설정 없이
+// 3m로 고정한다. 시각장애인은 건너는 동안 짚을 벽·트레일링 기준이 없어, 폭이 넓을수록 직진 이탈로
+// 맞은편 도착점을 놓치기 쉽다. '복도 = 폭 ≤3m' 정의와도 일치. 드물게 더 넓은 곳을 건너야 하면
+// 관리자가 '건너기 추가' 도구로 직접 그으면 된다.
+const CROSSING_MAX_M = 3
 const MIN_CORNER_CLEARANCE_M = 0.3 // 코너 횡단 좌우 최소 여유 — 이보다 벽이 가까우면 벽을 타는 걸로 보고 안 만든다
 const DEFAULT_CROSS_PENALTY_M = 5 // 건너기 페널티 기본값 — 이만큼 이상 절약될 때만 건넘
+
+// 캔버스에서 서로 배타적으로 켜지는 조작 모드. null이면 기본(노드 드래그로 위치 수정).
+// test=경로 찾기, deleteNode/deleteEdge=삭제, addNode/connect/addCross=수동 추가.
+type EditMode = 'test' | 'deleteNode' | 'deleteEdge' | 'addNode' | 'connect' | 'addCross'
+
+// 기존 노드 id(자동 생성분 N01·N02… 또는 이전에 수동으로 추가한 것)와 겹치지 않는 새 id를 만든다.
+// id 끝의 숫자 중 최댓값 +1 — 삭제로 중간이 비어도 항상 미사용 번호가 나온다.
+function nextNodeId(nodes: PathNode[]): string {
+  let max = 0
+  for (const node of nodes) {
+    const m = /(\d+)$/.exec(node.id)
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return `N${String(max + 1).padStart(2, '0')}`
+}
 
 // 저장된 마스크(PNG, 투명=미통행) 를 디코딩해 픽셀 단위 Uint8Array로 변환
 function decodeMask(dataUrl: string, w: number, h: number): Promise<Uint8Array> {
@@ -67,7 +86,6 @@ export default function PathNodePage() {
   const { data: landmarks } = useLandmarks(floorId)
   const { data: savedPathNodes } = usePathNodes(floorId)
   const savePathNodesMutation = useSavePathNodes(floorId)
-  const [crossingMaxM, setCrossingMaxM] = useState(String(DEFAULT_CROSSING_MAX_M))
   const [minClearanceM, setMinClearanceM] = useState(String(MIN_CORNER_CLEARANCE_M))
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -105,16 +123,19 @@ export default function PathNodePage() {
   // 문제 없이 몇 번 확인되면 지워도 된다.
   const [genSummary, setGenSummary] = useState<string | null>(null)
 
-  const [testMode, setTestMode] = useState(false)
+  // 모든 조작 모드는 서로 배타적 — 하나의 상태로 관리해 상호배타를 강제한다(클릭 동작이 겹치면 안 됨).
+  const [mode, setMode] = useState<EditMode | null>(null)
+  const testMode = mode === 'test'
+  const deleteMode = mode === 'deleteNode' // 자동 생성이 남긴 불필요한 노드를 직접 지우는 모드
+  const edgeDeleteMode = mode === 'deleteEdge' // 노드는 두고 건너기 엣지 하나만 지우는 모드
+  const addNodeMode = mode === 'addNode' // 빈 캔버스를 클릭해 경유점 노드를 추가하는 모드
+  const connectMode = mode === 'connect' // 두 노드를 클릭해 벽 엣지로 잇는 모드
+  const addCrossMode = mode === 'addCross' // 두 노드를 클릭해 건너기 엣지를 잇는 모드
   const [testStart, setTestStart] = useState<string | null>(null)
   const [testEnd, setTestEnd] = useState<string | null>(null)
+  // 연결/건너기 추가 모드에서 처음 클릭한 노드(둘째 클릭으로 엣지 완성). 모드를 바꾸면 초기화한다.
+  const [pendingFrom, setPendingFrom] = useState<string | null>(null)
   const [crossPenaltyM, setCrossPenaltyM] = useState(String(DEFAULT_CROSS_PENALTY_M))
-  // 자동 생성 결과에 섞여 나오는 불필요한 노드(예: 코너 근처의 잘못된 맞은편 지점)를 직접 지울 수
-  // 있게 하는 모드 — 테스트 모드와 동시에 켜두면 클릭 동작이 겹치므로 서로 배타적으로 켠다.
-  const [deleteMode, setDeleteMode] = useState(false)
-  // 대각선 벽 근처처럼 자동 판정으로는 걸러낼 수 없는 횡단 엣지를, 노드는 그대로 두고 엣지 하나만
-  // 관리자가 직접 지울 수 있게 하는 모드 — 다른 모드와 배타적으로 켠다.
-  const [edgeDeleteMode, setEdgeDeleteMode] = useState(false)
 
   const stageRef = useRef<Konva.Stage>(null)
   const [zoom, setZoom] = useState(1)
@@ -249,9 +270,9 @@ export default function PathNodePage() {
           .map((l) => ({ x: (l.x as number) * maskScale, y: (l.y as number) * maskScale, kind: 'landmark' as const })),
       ]
       // PathNode 좌표는 저장된 마스크와 동일한 픽셀 공간이라 축척(scaleMPerPx)을 별도 비율 보정 없이 바로 쓸 수 있다.
-      const crossingM = Number(crossingMaxM)
-      const crossingMaxPx =
-        savedScale && Number.isFinite(crossingM) && crossingM > 0 ? crossingM / savedScale.scaleMPerPx : undefined
+      // 횡단 허용 폭은 3m 고정(CROSSING_MAX_M). 축척이 없으면 undefined로 넘겨 generatePathNodes의
+      // 기본값(약 3m 상당 60px)이 쓰이게 한다.
+      const crossingMaxPx = savedScale ? CROSSING_MAX_M / savedScale.scaleMPerPx : undefined
       // 코너(벽 끝) 횡단의 옆(수직 방향) 여유가 이 거리보다 좁으면, 벽을 타면 바로 닿는 곳이라 판단해
       // 그 방향은 횡단으로 안내하지 않는다. 이 검사는 건너기 방향과 정확히 좌우/상하인 벽만 감지하므로,
       // 벽이 사선으로 나 있으면 값을 키워야 걸러질 수 있다.
@@ -329,6 +350,46 @@ export default function PathNodePage() {
     persist(nodes, nextEdges, maskDims)
   }
 
+  // 빈 캔버스를 클릭하면 그 자리에 일반 경유점(볼록 코너, 보라)을 하나 추가한다 — 자동 생성이 놓친
+  // 길목을 관리자가 직접 채우는 용도. 좌표는 마스크 픽셀 공간(다른 노드와 동일)으로 저장한다.
+  function addNodeAt(maskX: number, maskY: number) {
+    if (!maskDims) return
+    pushHistory()
+    const node: PathNode = { id: nextNodeId(nodes), x: Math.round(maskX), y: Math.round(maskY), type: 'corner', concave: false }
+    const next = [...nodes, node]
+    setNodes(next)
+    persist(next, edges, maskDims)
+  }
+
+  // 관리자가 직접 두 노드를 잇는다. wall은 무방향(보라 실선), cross는 첫 노드(from)에서만 건널 수 있는
+  // 단방향(초록 화살표) — 자동 생성 규칙과 동일. 같은 종류의 엣지가 이미 있으면(방향 무관) 무시한다.
+  function addManualEdge(from: string, to: string, type: EdgeKind) {
+    if (!maskDims || from === to) return
+    const exists = edges.some(
+      (e) => e.type === type && ((e.a === from && e.b === to) || (e.a === to && e.b === from)),
+    )
+    if (exists) return
+    pushHistory()
+    const next: PathEdge[] = [...edges, { a: from, b: to, type, directed: type === 'cross' ? true : undefined }]
+    setEdges(next)
+    persist(nodes, next, maskDims)
+  }
+
+  // 연결/건너기 추가 모드의 노드 클릭 처리: 첫 클릭으로 출발 노드를 잡고, 둘째 클릭으로 엣지를 만든다.
+  // 같은 노드를 다시 클릭하면 선택 취소.
+  function onNodeClickForEdge(nodeId: string, type: EdgeKind) {
+    if (!pendingFrom) {
+      setPendingFrom(nodeId)
+      return
+    }
+    if (pendingFrom === nodeId) {
+      setPendingFrom(null)
+      return
+    }
+    addManualEdge(pendingFrom, nodeId, type)
+    setPendingFrom(null)
+  }
+
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
   const scale = maskDims ? width / maskDims.w : 0
   const H = displayImg ? Math.round((displayImg.height / displayImg.width) * width) : 0
@@ -403,17 +464,13 @@ export default function PathNodePage() {
     setTestEnd(nodeId)
   }
 
-  function toggleTestMode() {
-    setDeleteMode(false)
-    setEdgeDeleteMode(false)
-    setTestMode((v) => {
-      const next = !v
-      if (!next) {
-        setTestStart(null)
-        setTestEnd(null)
-      }
-      return next
-    })
+  // 모드 토글 — 같은 모드를 다시 누르면 끄고(null), 다른 모드면 전환한다. 어느 쪽이든 테스트/연결
+  // 중이던 임시 선택 상태(시작·도착 노드, 연결 대기 노드)는 초기화해 모드 간 클릭이 섞이지 않게 한다.
+  function switchMode(target: EditMode) {
+    setMode((cur) => (cur === target ? null : target))
+    setTestStart(null)
+    setTestEnd(null)
+    setPendingFrom(null)
   }
 
   function clearTest() {
@@ -421,29 +478,34 @@ export default function PathNodePage() {
     setTestEnd(null)
   }
 
-  function toggleDeleteMode() {
-    setTestMode(false)
-    setTestStart(null)
-    setTestEnd(null)
-    setEdgeDeleteMode(false)
-    setDeleteMode((v) => !v)
-  }
-
-  function toggleEdgeDeleteMode() {
-    setTestMode(false)
-    setTestStart(null)
-    setTestEnd(null)
-    setDeleteMode(false)
-    setEdgeDeleteMode((v) => !v)
-  }
-
   function onNodeClick(nodeId: string) {
-    if (edgeDeleteMode) return
+    if (edgeDeleteMode || addNodeMode) return // 건너기 삭제는 엣지 클릭으로, 노드 추가는 빈 캔버스 클릭으로 처리
     if (deleteMode) {
       deleteNode(nodeId)
       return
     }
+    if (connectMode) {
+      onNodeClickForEdge(nodeId, 'wall')
+      return
+    }
+    if (addCrossMode) {
+      onNodeClickForEdge(nodeId, 'cross')
+      return
+    }
     onNodeClickForTest(nodeId)
+  }
+
+  // 노드 추가 모드에서 빈 캔버스(Stage 배경)를 클릭하면 그 지점에 노드를 만든다. 노드(Circle)를 클릭한
+  // 경우는 이벤트가 Stage까지 올라와도 여기서 무시한다(e.target이 Stage 자신일 때만 빈 곳으로 본다).
+  function onStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
+    if (!addNodeMode || !maskDims) return
+    const stage = stageRef.current
+    if (!stage || e.target !== stage) return
+    const pointer = stage.getPointerPosition()
+    if (!pointer || scale === 0) return
+    const localX = (pointer.x - stagePos.x) / zoom
+    const localY = (pointer.y - stagePos.y) / zoom
+    addNodeAt(localX / scale, localY / scale)
   }
 
   const crumbs = [
@@ -495,7 +557,7 @@ export default function PathNodePage() {
           <div
             ref={containerRef}
             className="w-full border border-line rounded-lg overflow-hidden bg-white"
-            style={{ cursor: 'grab' }}
+            style={{ cursor: mode && mode !== 'test' ? 'crosshair' : 'grab' }}
           >
             {maskDims && (
               // 캔버스 폭에 상한(MAX_CANVAS_W)을 두면서 컨테이너는 그보다 넓을 수 있게 됐다 — 가운데
@@ -511,7 +573,8 @@ export default function PathNodePage() {
                 scaleY={zoom}
                 x={stagePos.x}
                 y={stagePos.y}
-                draggable={!nodeDragging}
+                draggable={!nodeDragging && !addNodeMode}
+                onClick={onStageClick}
                 onDragEnd={(e) => setStagePos({ x: e.target.x(), y: e.target.y() })}
                 onWheel={onWheel}
               >
@@ -599,17 +662,20 @@ export default function PathNodePage() {
                   {nodes.map((node) => {
                     const isStart = testMode && node.id === testStart
                     const isEnd = testMode && node.id === testEnd
+                    // 연결/건너기 추가 모드에서 처음 클릭해 대기 중인 출발 노드 — 하늘색으로 강조.
+                    const isPending = (connectMode || addCrossMode) && node.id === pendingFrom
+                    const highlighted = isStart || isEnd || isPending
                     return (
                       <Circle
                         key={node.id}
                         opacity={reachableFromStart && !reachableFromStart.has(node.id) ? 0.18 : 1}
                         x={node.x * scale}
                         y={node.y * scale}
-                        radius={(isStart || isEnd ? 9 : node.type === 'facing' ? 9 : 7) / zoom}
-                        fill={isStart ? '#16a34a' : isEnd ? '#dc2626' : node.type === 'facing' ? undefined : pathNodeColor(node)}
-                        stroke={isStart || isEnd ? '#fff' : node.type === 'facing' ? pathNodeColor(node) : '#fff'}
-                        strokeWidth={(isStart || isEnd ? 2 : node.type === 'facing' ? 2 : 1.4) / zoom}
-                        draggable={!testMode && !deleteMode && !edgeDeleteMode}
+                        radius={(highlighted ? 9 : node.type === 'facing' ? 9 : 7) / zoom}
+                        fill={isStart ? '#16a34a' : isEnd ? '#dc2626' : isPending ? '#0ea5e9' : node.type === 'facing' ? undefined : pathNodeColor(node)}
+                        stroke={highlighted ? '#fff' : node.type === 'facing' ? pathNodeColor(node) : '#fff'}
+                        strokeWidth={(highlighted ? 2 : node.type === 'facing' ? 2 : 1.4) / zoom}
+                        draggable={mode === null}
                         onClick={() => onNodeClick(node.id)}
                         onDragStart={(e: Konva.KonvaEventObject<DragEvent>) => {
                           e.cancelBubble = true
@@ -651,27 +717,14 @@ export default function PathNodePage() {
           </div>
 
           <div className="mt-4">
-            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-1">
               횡단 가능한 최대 거리
-              <InfoTooltip text="복도 건너편까지의 거리가 이 값보다 멀면 횡단 엣지를 만들지 않아요. 값을 키우면 넓은 홀이나 로비도 건너뛸 수 있게 되고, 줄이면 폭이 좁은 곳에서만 횡단 엣지가 생겨요." />
+              <InfoTooltip text="벽 없는 열린 공간을 가로질러 맞은편으로 건너가라고 안내할 수 있는 최대 폭이에요. 시각장애인이 건너는 동안 짚을 벽이 없어 폭이 넓을수록 위험하므로 3m로 고정했습니다(복도 폭 정의와 동일). 더 넓은 곳을 건너야 하면 아래 '건너기 추가'로 직접 그으세요." />
             </span>
-            <div className="flex items-center gap-2">
-              <span className="text-[12px] text-muted">최대</span>
-              <input
-                type="number"
-                min={0.1}
-                step={0.5}
-                value={crossingMaxM}
-                onChange={(e) => setCrossingMaxM(e.target.value)}
-                className="w-16 h-9 px-2 rounded-lg border border-line bg-field text-sm outline-none text-right"
-              />
-              <span className="text-[12px] text-muted">m</span>
-            </div>
-            {!savedScale && (
-              <p className="text-[12px] text-muted mt-1">
-                축척이 아직 없어 기본값(약 {DEFAULT_CROSSING_MAX_M}m 상당)으로 계산됩니다.
-              </p>
-            )}
+            <p className="text-[13px]">
+              <span className="font-medium">{CROSSING_MAX_M}m</span>
+              <span className="text-[12px] text-muted"> (고정)</span>
+            </p>
           </div>
 
           <div className="mt-4">
@@ -725,34 +778,87 @@ export default function PathNodePage() {
             </Button>
           </div>
 
-          <Button
-            variant={deleteMode ? 'danger' : 'outline'}
-            className="w-full mt-2"
-            disabled={nodes.length === 0}
-            onClick={toggleDeleteMode}
-          >
-            {deleteMode ? '노드 삭제 모드 끄기' : '노드 삭제 모드'}
-          </Button>
-          {deleteMode && (
-            <p className="text-[12px] text-muted mt-1.5">
-              지울 노드를 클릭하세요. 실수하면 되돌리기(Ctrl+Z)로 복구할 수 있어요.
-            </p>
-          )}
+          <div className="mt-4 pt-4 border-t border-line">
+            <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              노드·엣지 편집
+              <InfoTooltip text="자동 생성 결과를 관리자가 직접 손보는 도구예요. 겹친 노드를 지워 연결이 끊겼을 때는 '노드 연결'로 다시 이어 주세요. 어떤 편집이든 되돌리기(Ctrl+Z)로 복구할 수 있어요." />
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant={addNodeMode ? 'primary' : 'outline'}
+                className="whitespace-nowrap"
+                style={{ padding: '0 4px', fontSize: 13 }}
+                disabled={!maskDims}
+                onClick={() => switchMode('addNode')}
+              >
+                노드 추가
+              </Button>
+              <Button
+                variant={connectMode ? 'primary' : 'outline'}
+                className="whitespace-nowrap"
+                style={{ padding: '0 4px', fontSize: 13 }}
+                disabled={nodes.length < 2}
+                onClick={() => switchMode('connect')}
+              >
+                노드 연결
+              </Button>
+              <Button
+                variant={addCrossMode ? 'primary' : 'outline'}
+                className="whitespace-nowrap"
+                style={{ padding: '0 4px', fontSize: 13 }}
+                disabled={nodes.length < 2}
+                onClick={() => switchMode('addCross')}
+              >
+                건너기 추가
+              </Button>
+              <Button
+                variant={deleteMode ? 'danger' : 'outline'}
+                className="whitespace-nowrap"
+                style={{ padding: '0 4px', fontSize: 13 }}
+                disabled={nodes.length === 0}
+                onClick={() => switchMode('deleteNode')}
+              >
+                노드 삭제
+              </Button>
+            </div>
+            <Button
+              variant={edgeDeleteMode ? 'danger' : 'outline'}
+              className="w-full mt-2"
+              disabled={edges.filter((e) => e.type === 'cross').length === 0}
+              onClick={() => switchMode('deleteEdge')}
+            >
+              {edgeDeleteMode ? '건너기 엣지 삭제 모드 끄기' : '건너기 엣지 삭제'}
+            </Button>
 
-          <Button
-            variant={edgeDeleteMode ? 'danger' : 'outline'}
-            className="w-full mt-2"
-            disabled={edges.filter((e) => e.type === 'cross').length === 0}
-            onClick={toggleEdgeDeleteMode}
-          >
-            {edgeDeleteMode ? '건너기 엣지 삭제 모드 끄기' : '건너기 엣지 삭제 모드'}
-          </Button>
-          {edgeDeleteMode && (
-            <p className="text-[12px] text-muted mt-1.5">
-              대각선 벽 근처처럼 자동으로 안 걸러지는 건너기 화살표를 직접 클릭해서 지우세요. 노드는
-              그대로 남습니다. 실수하면 되돌리기(Ctrl+Z)로 복구할 수 있어요.
-            </p>
-          )}
+            {addNodeMode && (
+              <p className="text-[12px] text-muted mt-1.5">
+                빈 곳을 클릭하면 그 자리에 경유점 노드(코너)가 생겨요. 만든 뒤 &lsquo;노드 연결&rsquo;로 이어 주세요.
+              </p>
+            )}
+            {connectMode && (
+              <p className="text-[12px] text-muted mt-1.5">
+                {pendingFrom ? '이을 상대 노드를 클릭하세요(같은 노드 다시 클릭 시 취소).' : '이을 두 노드를 차례로 클릭하세요.'}
+              </p>
+            )}
+            {addCrossMode && (
+              <p className="text-[12px] text-muted mt-1.5">
+                {pendingFrom
+                  ? '건너갈 맞은편(도착) 노드를 클릭하세요.'
+                  : '건너기 출발 노드 → 도착 노드 순으로 클릭하면 그 방향으로 화살표가 생겨요.'}
+              </p>
+            )}
+            {deleteMode && (
+              <p className="text-[12px] text-muted mt-1.5">
+                지울 노드를 클릭하세요. 실수하면 되돌리기(Ctrl+Z)로 복구할 수 있어요.
+              </p>
+            )}
+            {edgeDeleteMode && (
+              <p className="text-[12px] text-muted mt-1.5">
+                대각선 벽 근처처럼 자동으로 안 걸러지는 건너기 화살표를 직접 클릭해서 지우세요. 노드는
+                그대로 남습니다. 실수하면 되돌리기(Ctrl+Z)로 복구할 수 있어요.
+              </p>
+            )}
+          </div>
 
           <div className="mt-4 pt-4 border-t border-line">
             <span className="block text-[13px] text-muted mb-2">화면 확대/축소</span>
@@ -780,7 +886,7 @@ export default function PathNodePage() {
               variant={testMode ? 'primary' : 'outline'}
               className="w-full"
               disabled={nodes.length === 0}
-              onClick={toggleTestMode}
+              onClick={() => switchMode('test')}
             >
               {testMode ? '테스트 모드 끄기' : '시작·도착 노드 클릭'}
             </Button>

@@ -4,8 +4,17 @@
 import type { FloorMask } from '@/features/mapEditor/api'
 import { MAP_DESIGN_W } from './constants'
 import { rasterizeMask } from './maskRaster'
+import { findCorridorSnap } from './corridorSnap'
 
 export const D_MAX_M = 6
+// 보간점이 어느 방향으로도 이보다 가까운 벽이 없으면(뻥 뚫린 넓은 공간 한복판) 버린다 — 직선 보간이라
+// 두 비콘이 넓은 로비 같은 곳을 가로질러 이어질 때, 그 사이 아무 벽도 없는 허공에 보강비콘이 찍히는
+// 걸 막는다(실제 요청).
+const WALL_PROXIMITY_MAX_M = 2
+// 복도 폭(수직/수평 중 짧은 쪽 — findCorridorSnap과 동일한 기준)이 이보다 좁으면, 보간 위치를 그대로
+// 쓰지 않고 복도 정중앙으로 강제 스냅한다 — 좁은 복도에서는 직선 보간이 벽에 살짝 치우쳐도 실제
+// 통행에 방해가 되므로(실제 요청).
+const NARROW_CORRIDOR_MAX_M = 4
 
 export interface SemanticPoint {
   id: string
@@ -63,6 +72,27 @@ export function nearestWalkable(
         const y = y0 + dy
         if (x < 0 || y < 0 || x >= w || y >= h) continue
         if (walkable[y * w + x]) return { x, y }
+      }
+    }
+  }
+  return null
+}
+
+// px,py에서 maxR(마스크 픽셀) 안에 있는 가장 가까운 벽(통행 불가 픽셀)까지의 거리를 찾는다.
+// 링 확장 탐색이라 nearestWalkable과 반대 방향(통행가능 대신 통행불가를 찾음) — 실제로 필요한 건
+// "몇 픽셀인지"가 아니라 "maxR 안에 있는지"뿐이라, maxR을 넘어서면 그냥 null(=충분히 멀다)로
+// 끝내 불필요한 탐색을 하지 않는다. 마스크 밖으로 나가면(설계도 바깥 경계) 그 자체를 벽으로 본다.
+function nearestWallDistancePx(px: number, py: number, w: number, h: number, walkable: Uint8Array, maxR: number): number | null {
+  const x0 = Math.round(px)
+  const y0 = Math.round(py)
+  for (let r = 0; r <= maxR; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue
+        const x = x0 + dx
+        const y = y0 + dy
+        if (x < 0 || y < 0 || x >= w || y >= h) return r
+        if (!walkable[y * w + x]) return r
       }
     }
   }
@@ -232,6 +262,33 @@ export function dedupeClosePlanItems(
   return kept
 }
 
+// 보간된 후보 위치 하나에 "벽 근접"·"좁은 복도 중앙 정렬" 규칙을 적용한다(둘 다 마스크 픽셀 기준).
+// planReinforcementBeacons에서 분리한 이유: 그 함수는 rasterizeMask(실제 이미지 디코딩)에 묶여 있어
+// 순수 함수 단위로 테스트하기 어렵다 — 여기 로직만 떼어내면 Uint8Array 마스크로 바로 테스트할 수 있다.
+// - 어느 방향으로도 WALL_PROXIMITY_MAX_M 안에 벽이 없으면(뻥 뚫린 공간 한복판) null(버림).
+// - 복도 폭(수직/수평 중 짧은 쪽 — findCorridorSnap과 동일 기준)이 NARROW_CORRIDOR_MAX_M보다 좁으면
+//   정중앙으로 스냅한 좌표를, 아니면 원래 좌표를 그대로 돌려준다.
+export function applyLocalPlacementRules(
+  px: number,
+  py: number,
+  w: number,
+  h: number,
+  walkable: Uint8Array,
+  scaleMPerPx: number,
+): { x: number; y: number } | null {
+  const wallProximityMaxPx = Math.ceil(WALL_PROXIMITY_MAX_M / scaleMPerPx)
+  if (nearestWallDistancePx(px, py, w, h, walkable, wallProximityMaxPx) == null) return null
+
+  const snap = findCorridorSnap(w, h, walkable, px, py)
+  if (snap) {
+    const corridorWidthPx = Math.hypot(snap.guide.x2 - snap.guide.x1, snap.guide.y2 - snap.guide.y1)
+    if (corridorWidthPx * scaleMPerPx < NARROW_CORRIDOR_MAX_M) {
+      return { x: snap.x, y: snap.y }
+    }
+  }
+  return { x: px, y: py }
+}
+
 // scaleMPerPx는 지도검수 캔버스(마스크 픽셀) 기준으로 캘리브레이션된 값이라,
 // 비콘의 설계도 좌표(900 기준)와는 스케일이 다르다 — mask.width/900 비율로 보정해 실거리를 구한다.
 export async function planReinforcementBeacons(
@@ -264,9 +321,13 @@ export async function planReinforcementBeacons(
       const rawY = a.y + (b.y - a.y) * t
       // 직선 보간이라 복도가 휘는 구간에서는 벽 위에 찍힐 수 있다 — 통행 가능 픽셀로 보정한다.
       const corrected = nearestWalkable(rawX * ratio, rawY * ratio, w, h, walkable)
-      const x = corrected ? corrected.x / ratio : rawX
-      const y = corrected ? corrected.y / ratio : rawY
-      plan.push({ x, y, pair: [a.id, b.id] })
+      const maskX = corrected ? corrected.x : rawX * ratio
+      const maskY = corrected ? corrected.y : rawY * ratio
+
+      const placed = applyLocalPlacementRules(maskX, maskY, w, h, walkable, scaleMPerPx)
+      if (!placed) continue
+
+      plan.push({ x: placed.x / ratio, y: placed.y / ratio, pair: [a.id, b.id] })
     }
   }
   return dedupeClosePlanItems(plan, mPerDesignPx, semanticPoints)
