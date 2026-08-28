@@ -216,6 +216,17 @@ export const handlers = [
     return HttpResponse.json(connector, { status: 201 })
   }),
 
+  http.patch(`${base}/buildings/:buildingId/connectors/:connectorId`, async ({ params, request }) => {
+    const { buildingId, connectorId } = params as Record<string, string>
+    const list = db.connectors[buildingId]
+    const connector = list?.find((c) => c.id === connectorId)
+    if (!connector) return new HttpResponse(null, { status: 404 })
+    const body = (await request.json()) as Partial<Pick<Connector, 'name' | 'type' | 'floors'>>
+    if (body.floors) body.floors = body.floors.slice().sort((a, b) => a - b)
+    Object.assign(connector, body)
+    return HttpResponse.json(connector)
+  }),
+
   http.delete(`${base}/buildings/:buildingId/connectors/:connectorId`, ({ params }) => {
     const list = db.connectors[params.buildingId as string]
     if (list) {
