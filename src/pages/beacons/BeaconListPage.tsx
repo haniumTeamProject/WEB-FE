@@ -178,12 +178,16 @@ export default function BeaconListPage() {
 
   // 지금 등록된 비콘을 mapImport.ts가 읽을 수 있는 mappinProject 형식으로 내보낸다 — 이 파일을 다시
   // "지도 데이터 가져오기"에 넣으면 그대로 복원된다(백업 겸 다른 층/환경으로 옮기는 용도).
+  // 보강비콘은 제외한다 — 이 형식엔 type 필드가 없어 재가져오기 시 무조건 의미비콘으로 생성되고,
+  // 보강비콘은 sourceUid가 없어 diffImport가 기존 것과 매칭도 못 해 원본은 그대로 둔 채 파란
+  // 의미비콘이 같은 자리에 새로 하나 더 생겨버린다(실제 발견된 문제) — 보강비콘은 언제든
+  // '보강비콘 자동생성'으로 다시 만들 수 있으니 내보내기 대상에서 아예 뺀다.
   function onExport() {
     const payload = {
       mappinProject: true,
       origW: MAP_DESIGN_W,
       beacons: (beacons ?? [])
-        .filter((b) => b.x != null && b.y != null)
+        .filter((b) => b.type === 'semantic' && b.x != null && b.y != null)
         .map((b) => ({ id: b.sourceLabel ?? b.name, uid: b.sourceUid ?? b.id, x: b.x as number, y: b.y as number })),
       landmarks: [],
     }
