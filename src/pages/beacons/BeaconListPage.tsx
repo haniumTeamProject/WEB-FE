@@ -231,6 +231,12 @@ export default function BeaconListPage() {
     }
   }
 
+  // D_max(6m) 커버리지 원 반경(설계도 좌표 기준) — 마스크·축척이 있어야 실거리 환산 가능. 배치 중인
+  // 점뿐 아니라 이미 등록된 의미비콘에도 항상 보여준다 — 배치할 때만 잠깐 보이면, 다 등록하고 나서
+  // 어디가 6m 넘게 비어 있는지(보강비콘이 왜 필요한지) 한눈에 가늠하기 어렵다(실제 요청).
+  const maskRatio = mask ? mask.width / MAP_DESIGN_W : null
+  const radiusHintPx = maskRatio && scale ? D_MAX_M / (maskRatio * scale.scaleMPerPx) : undefined
+
   const points: MapPoint[] = (beacons ?? [])
     .filter((b) => b.x != null && b.y != null)
     .map((b) => ({
@@ -241,12 +247,9 @@ export default function BeaconListPage() {
       label: b.name,
       draggable: b.type === 'semantic', // 보강비콘은 자동계산된 위치라 드래그로 옮기지 않는다
       radius: 5,
+      radiusHintPx: b.type === 'semantic' ? radiusHintPx : undefined,
     }))
   if (pendingPos) {
-    // 배치 중인 점 주변에 D_max(6m) 커버리지 원을 보여준다 — 마스크·축척이 있어야 실거리 환산 가능
-    const maskRatio = mask ? mask.width / MAP_DESIGN_W : null
-    const radiusHintPx =
-      maskRatio && scale ? D_MAX_M / (maskRatio * scale.scaleMPerPx) : undefined
     points.push({
       id: PENDING_ID,
       x: pendingPos.x,
