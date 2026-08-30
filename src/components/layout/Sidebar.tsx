@@ -19,8 +19,8 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
 export function Sidebar() {
   return (
     <nav className="w-60 min-h-screen border-r border-line pt-6 bg-white">
-      <NavLink to="/" end className="block px-6 pb-6 text-[22px] font-extrabold text-brand">
-        Mappin
+      <NavLink to="/" end className="block px-6 pb-6">
+        <img src="/mappin-logo-v1.png" alt="Mappin" className="h-8 w-auto" />
       </NavLink>
       {items.map((it) => (
         <NavLink key={it.to} to={it.to} end={it.end} className={linkClass}>
