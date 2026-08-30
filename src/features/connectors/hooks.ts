@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createConnector, deleteConnector, fetchConnectors, setConnectorPosition, clearConnectorPosition } from './api'
-import type { CreateConnectorInput } from './api'
+import {
+  createConnector,
+  deleteConnector,
+  fetchConnectors,
+  setConnectorPosition,
+  clearConnectorPosition,
+  updateConnector,
+} from './api'
+import type { CreateConnectorInput, UpdateConnectorInput } from './api'
 
 export function useConnectors(buildingId: string) {
   return useQuery({
@@ -14,6 +21,15 @@ export function useCreateConnector(buildingId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: CreateConnectorInput) => createConnector(buildingId, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['buildings', buildingId, 'connectors'] }),
+  })
+}
+
+export function useUpdateConnector(buildingId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ connectorId, input }: { connectorId: string; input: UpdateConnectorInput }) =>
+      updateConnector(buildingId, connectorId, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['buildings', buildingId, 'connectors'] }),
   })
 }

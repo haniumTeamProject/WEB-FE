@@ -7,6 +7,8 @@ export interface CreateConnectorInput {
   floors: number[]
 }
 
+export type UpdateConnectorInput = Partial<CreateConnectorInput>
+
 export async function fetchConnectors(buildingId: string): Promise<Connector[]> {
   const { data } = await apiClient.get<Connector[]>(`/buildings/${buildingId}/connectors`)
   return data
@@ -17,6 +19,18 @@ export async function createConnector(
   input: CreateConnectorInput,
 ): Promise<Connector> {
   const { data } = await apiClient.post<Connector>(`/buildings/${buildingId}/connectors`, input)
+  return data
+}
+
+export async function updateConnector(
+  buildingId: string,
+  connectorId: string,
+  input: UpdateConnectorInput,
+): Promise<Connector> {
+  const { data } = await apiClient.patch<Connector>(
+    `/buildings/${buildingId}/connectors/${connectorId}`,
+    input,
+  )
   return data
 }
 
