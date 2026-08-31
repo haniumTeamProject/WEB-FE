@@ -83,7 +83,6 @@ export default function DashboardPage() {
   const buildings = data ?? []
   const totalFloors = buildings.reduce((sum, b) => sum + (b.floorCount ?? 0), 0)
   const ready = buildings.filter((b) => b.status === 'ready').length
-  const inProgress = buildings.length - ready
 
   const floorQueries = useQueries({
     queries: buildings.map((b) => ({
@@ -103,11 +102,22 @@ export default function DashboardPage() {
       <Breadcrumb items={[{ label: '홈', to: '/' }, { label: '대시보드' }]} />
       <h1>대시보드</h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-        <StatCard label="총 건물" value={buildings.length} hint="등록된 건물 수" />
-        <StatCard label="총 층" value={totalFloors} hint="건물별 층 합계" />
-        <StatCard label="안내 가능" value={ready} hint="세팅 완료 건물" />
-        <StatCard label="세팅 필요" value={inProgress} hint="진행 중 건물" />
+      {/* 인벤토리 개수(총 건물·총 층)는 건물 목록에도 있어 중복 — 대시보드는 "완결 진행 + 남은 할 일"
+          중심으로 좁힌다. 안내 가능은 전체 대비 비율로 목표 진행도를, 세팅 필요 항목은 아래 '다음 할 일'
+          리스트와 직결되는 층별 작업 수를 보여준다. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        <StatCard
+          label="안내 가능"
+          value={
+            <>
+              {ready}
+              <span style={{ fontSize: 20, fontWeight: 600, color: '#8C99B3' }}> / {buildings.length}</span>
+            </>
+          }
+          hint="안내 준비된 건물"
+        />
+        <StatCard label="세팅 필요 항목" value={floorsLoading ? '…' : todos.length} hint="층별 남은 작업" />
+        <StatCard label="총 층" value={totalFloors} hint="관리 중인 층" />
       </div>
 
       <h2 style={{ margin: '28px 0 12px' }}>다음 할 일</h2>
@@ -132,18 +142,23 @@ export default function DashboardPage() {
             <p className="text-muted text-sm">모든 층 세팅이 완료됐습니다.</p>
           </Card>
         )}
+        {/* 액션 리스트 행: 넓은 화면에서 버튼만 멀리 떨어져 클릭 대상이 애매하던 문제를 없애려, 행
+            전체를 클릭 가능한 링크로 만들고 우측엔 '이동' 힌트+화살표만 둔다(설정 메뉴·목록형 UI의 관행). */}
         {!isLoading && !isError && !floorsLoading && todos.map((t) => (
-          <Card key={t.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16 }}>
-            <div>
-              <span style={{ fontWeight: 600 }}>{t.label}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: t.fg, marginLeft: 10 }}>{t.statusLabel}</span>
-            </div>
-            <Link to={t.to}>
-              <Button variant="outline" style={{ height: 36, padding: '0 14px', whiteSpace: 'nowrap' }}>
+          <Link key={t.key} to={t.to} className="block no-underline">
+            <Card
+              className="hover:bg-gray-50 transition-colors cursor-pointer"
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: 16 }}
+            >
+              <div className="min-w-0">
+                <span style={{ fontWeight: 600, color: '#1A2233' }}>{t.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: t.fg, marginLeft: 10 }}>{t.statusLabel}</span>
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#4B70E5', whiteSpace: 'nowrap' }}>
                 {t.stepLabel}로 이동 →
-              </Button>
-            </Link>
-          </Card>
+              </span>
+            </Card>
+          </Link>
         ))}
       </div>
     </div>
