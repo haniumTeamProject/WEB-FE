@@ -43,6 +43,7 @@ export function FloorMapCanvas({
   onCanvasClick,
   snapToCorridorCenter,
   alignSnapEnabled,
+  cursorHintRadiusPx,
 }: {
   floorId: string
   points: MapPoint[]
@@ -50,6 +51,9 @@ export function FloorMapCanvas({
   onCanvasClick?: (x: number, y: number) => void
   snapToCorridorCenter?: boolean // 드래그 중 마스크 기준 복도 중심으로 자동 스냅(비콘 배치용)
   alignSnapEnabled?: boolean // 드래그 중 다른 점과 x/y가 맞으면 정렬 스냅(복도 중심 스냅이 우선)
+  // 설정하면(설계도 900 좌표 기준 반경) 지도 위 커서를 따라다니는 반투명 커버리지 원을 그린다 —
+  // 배치할 때 6m 범위를 미리 가늠하는 용도. 등록된 점마다 원을 그리지 않고 커서에만 붙는다(실제 요청).
+  cursorHintRadiusPx?: number
 }) {
   const { data: floorplan } = useFloorplan(floorId)
   const { data: mask } = useMask(snapToCorridorCenter ? floorId : '')
@@ -62,6 +66,8 @@ export function FloorMapCanvas({
   const [zoom, setZoom] = useState(1)
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
   const [pointDragging, setPointDragging] = useState(false)
+  // 커서 커버리지 원의 현재 위치(레이어 좌표, 줌·이동 반영 전). 마우스가 지도를 벗어나면 null.
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null)
   const [snapGuide, setSnapGuide] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const [alignGuides, setAlignGuides] = useState<{ x1: number; y1: number; x2: number; y2: number }[]>([])
   // 드래그 중 복도·정렬 스냅이 고정한 축 — 드롭 시 그 축까지 grid snap으로 다시 반올림해 어긋나지 않게 한다.
@@ -161,6 +167,15 @@ export function FloorMapCanvas({
     onCanvasClick(snapToGrid(Math.round(localX / scale)), snapToGrid(Math.round(localY / scale)))
   }
 
+  // 커서 커버리지 원: 마우스가 움직일 때마다 레이어 좌표(줌·이동 무관)로 위치를 갱신한다.
+  function handleStageMouseMove() {
+    if (cursorHintRadiusPx == null) return
+    const stage = stageRef.current
+    const pos = stage?.getPointerPosition()
+    if (!stage || !pos) return
+    setCursorPos({ x: (pos.x - stagePos.x) / zoom, y: (pos.y - stagePos.y) / zoom })
+  }
+
   if (!floorplan) {
     return (
       <div
@@ -195,11 +210,27 @@ export function FloorMapCanvas({
         onDragEnd={(e) => setStagePos({ x: e.target.x(), y: e.target.y() })}
         onWheel={onWheel}
         onClick={handleStageClick}
+        onMouseMove={handleStageMouseMove}
+        onMouseLeave={() => setCursorPos(null)}
       >
         <Layer listening={false}>
           {displayImg && <KonvaImage image={displayImg} width={width} height={H} />}
           {loadedMaskImg && <KonvaImage image={loadedMaskImg.image} width={width} height={H} opacity={0.45} />}
         </Layer>
+        {cursorHintRadiusPx != null && cursorPos && (
+          // 커서를 따라다니는 6m 커버리지 원 — 클릭을 막지 않게 listening=false, 점보다 아래(배경 위)에 둔다.
+          <Layer listening={false}>
+            <Circle
+              x={cursorPos.x}
+              y={cursorPos.y}
+              radius={cursorHintRadiusPx * scale}
+              fill="rgba(75,112,229,0.08)"
+              stroke="rgba(75,112,229,0.35)"
+              strokeWidth={1}
+              dash={[4, 4]}
+            />
+          </Layer>
+        )}
         <Layer>
           {points.map((p) => (
             <Group
@@ -277,7 +308,10 @@ export function FloorMapCanvas({
                         }[] = []
                         if (beaconSnap != null)
                           cands.push({ v: beaconSnap, d: Math.abs(beaconSnap - pos), beacon: beaconGuide, corridor: null })
-                        if (corridorHere)
+                        // 복도 중앙도 비콘 정렬과 같은 임계값 안일 때만 후보로 삼는다. 예전엔 임계값 없이
+                        // 무조건 정중앙으로 당겨서, 넓은 복도에선 커서가 반-복도폭만큼(수 mm) 튀는 느낌이
+                        // 강했다(실제 요청). 이제 중앙 근처로 가야만 자석처럼 붙는다.
+                        if (corridorHere && Math.abs(corridorHere.v - pos) <= ALIGN_THRESHOLD_SCREEN_PX / zoom)
                           cands.push({ v: corridorHere.v, d: Math.abs(corridorHere.v - pos), beacon: null, corridor: corridorHere.guide })
                         if (!cands.length) return null
                         cands.sort((a, b) => a.d - b.d)
@@ -324,9 +358,16 @@ export function FloorMapCanvas({
                     }
                   : undefined
               }
-              onDragStart={(e) => {
+              onDragStart={(e: Konva.KonvaEventObject<DragEvent>) => {
                 e.cancelBubble = true
                 setPointDragging(true)
+                // 드래그를 시작하면 커서 원을 바로 잡히는 점 위치로 옮긴다(첫 onDragMove 전에도 안 튀게).
+                if (cursorHintRadiusPx != null) setCursorPos({ x: e.target.x(), y: e.target.y() })
+              }}
+              // 점을 드래그하는 동안엔 Stage의 onMouseMove가 안 뜨므로(Konva가 포인터를 점에 잡아둠),
+              // 여기서 직접 커서 원을 드래그되는 점 위치로 따라오게 한다.
+              onDragMove={(e: Konva.KonvaEventObject<DragEvent>) => {
+                if (cursorHintRadiusPx != null) setCursorPos({ x: e.target.x(), y: e.target.y() })
               }}
               onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) => {
                 e.cancelBubble = true

@@ -231,9 +231,8 @@ export default function BeaconListPage() {
     }
   }
 
-  // D_max(6m) 커버리지 원 반경(설계도 좌표 기준) — 마스크·축척이 있어야 실거리 환산 가능. 배치 중인
-  // 점뿐 아니라 이미 등록된 의미비콘에도 항상 보여준다 — 배치할 때만 잠깐 보이면, 다 등록하고 나서
-  // 어디가 6m 넘게 비어 있는지(보강비콘이 왜 필요한지) 한눈에 가늠하기 어렵다(실제 요청).
+  // D_max(6m) 커버리지 원 반경(설계도 좌표 기준) — 마스크·축척이 있어야 실거리 환산 가능. 지도 위
+  // 커서를 따라다니는 원 하나로만 보여준다(비콘마다 원을 그리면 지도가 원으로 뒤덮여 지저분하다는 요청).
   const maskRatio = mask ? mask.width / MAP_DESIGN_W : null
   const radiusHintPx = maskRatio && scale ? D_MAX_M / (maskRatio * scale.scaleMPerPx) : undefined
 
@@ -247,7 +246,6 @@ export default function BeaconListPage() {
       label: b.name,
       draggable: b.type === 'semantic', // 보강비콘은 자동계산된 위치라 드래그로 옮기지 않는다
       radius: 5,
-      radiusHintPx: b.type === 'semantic' ? radiusHintPx : undefined,
     }))
   if (pendingPos) {
     points.push({
@@ -257,7 +255,6 @@ export default function BeaconListPage() {
       color: '#8C99B3',
       label: name.trim() || '새 위치',
       radius: 5,
-      radiusHintPx,
     })
   }
 
@@ -339,6 +336,7 @@ export default function BeaconListPage() {
             onCanvasClick={(x, y) => setPendingPos({ x, y })}
             snapToCorridorCenter={corridorSnapEnabled}
             alignSnapEnabled={alignSnapEnabled}
+            cursorHintRadiusPx={radiusHintPx}
           />
           <div className="flex flex-wrap items-center gap-4 mt-2 text-[13px] text-muted">
             <span style={{ color: TYPE_COLOR.semantic }}>● 의미비콘</span>
