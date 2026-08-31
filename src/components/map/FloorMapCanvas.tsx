@@ -9,7 +9,7 @@ import { snapToGrid } from '@/lib/utils'
 import { rasterizeMask } from '@/lib/maskRaster'
 import type { RasterizedMask } from '@/lib/maskRaster'
 import { findCorridorSnap } from '@/lib/corridorSnap'
-import { findBeaconAlign } from '@/lib/beaconAlign'
+import { findBeaconGuides } from '@/lib/beaconAlign'
 
 export interface MapPoint {
   id: string
@@ -65,7 +65,8 @@ export function FloorMapCanvas({
   const [snapGuide, setSnapGuide] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const [alignGuides, setAlignGuides] = useState<{ x1: number; y1: number; x2: number; y2: number }[]>([])
   // 드래그 중 복도·정렬 스냅이 고정한 축 — 드롭 시 그 축까지 grid snap으로 다시 반올림해 어긋나지 않게 한다.
-  const lockedAxisRef = useRef<'x' | 'y' | null>(null)
+  // 드래그 중 스냅으로 고정한 축(양축 각각). 잠긴 축은 드롭 시 grid 반올림을 건너뛴다.
+  const lockedAxisRef = useRef<{ x: boolean; y: boolean }>({ x: false, y: false })
 
   useLayoutEffect(() => {
     const el = containerRef.current
@@ -221,37 +222,91 @@ export function FloorMapCanvas({
                       // 다른 비콘과의 정렬(구체적인 특정 비콘 좌표에 맞추려는 의도)이 복도 중앙 스냅(일반적인
                       // 통로 폭 추정)보다 우선한다 — 복도 스냅은 폭 제한이 없어 거의 항상 무언가를 찾아내므로,
                       // 복도 스냅을 먼저 보면 근처 비콘과 정렬하려는 의도가 거의 항상 가려져 버린다.
-                      let result = local
-                      let axis: 'x' | 'y' | null = null
+                      // 비콘 정렬(양축 각각 최근접)과 복도 중앙 스냅을 축별로 합친다. 각 축은 임계값 내
+                      // 가장 가까운 기준(비콘 or 복도) 하나에 자석처럼 붙고, 그 축의 보조선 하나만 그린다.
+                      // 두 축이 동시에 걸리면 세로+가로가 십자로 만난다(예전엔 한 축만 처리했다).
+                      let resX = local.x
+                      let resY = local.y
+                      let lockX = false
+                      let lockY = false
+                      const nextAlignGuides: typeof alignGuides = []
                       let nextSnapGuide: typeof snapGuide = null
-                      let nextAlignGuides: typeof alignGuides = []
 
-                      if (alignSnapEnabled) {
-                        const others = points
-                          .filter((q) => q.id !== p.id)
-                          .map((q) => ({ x: q.x * scale, y: q.y * scale }))
-                        const alignThreshold = ALIGN_THRESHOLD_SCREEN_PX / zoom
-                        const align = findBeaconAlign(local.x, local.y, others, alignThreshold)
-                        if (align) {
-                          nextAlignGuides = align.guides
-                          axis = align.axis
-                          result = { x: align.x, y: align.y }
-                        }
-                      }
-                      if (axis === null && snapToCorridorCenter && rasterized) {
+                      const bg = alignSnapEnabled
+                        ? findBeaconGuides(
+                            local.x,
+                            local.y,
+                            points.filter((q) => q.id !== p.id).map((q) => ({ x: q.x * scale, y: q.y * scale })),
+                            ALIGN_THRESHOLD_SCREEN_PX / zoom,
+                          )
+                        : { snapX: null, snapY: null, xGuide: null, yGuide: null }
+
+                      let corridor: { axis: 'x' | 'y'; x: number; y: number; guide: NonNullable<typeof snapGuide> } | null =
+                        null
+                      if (snapToCorridorCenter && rasterized) {
                         const maskX = (local.x / scale) * maskRatio
                         const maskY = (local.y / scale) * maskRatio
                         const snap = findCorridorSnap(rasterized.w, rasterized.h, rasterized.walkable, maskX, maskY)
                         if (snap) {
-                          nextSnapGuide = {
-                            x1: (snap.guide.x1 / maskRatio) * scale,
-                            y1: (snap.guide.y1 / maskRatio) * scale,
-                            x2: (snap.guide.x2 / maskRatio) * scale,
-                            y2: (snap.guide.y2 / maskRatio) * scale,
+                          corridor = {
+                            axis: snap.axis,
+                            x: (snap.x / maskRatio) * scale,
+                            y: (snap.y / maskRatio) * scale,
+                            guide: {
+                              x1: (snap.guide.x1 / maskRatio) * scale,
+                              y1: (snap.guide.y1 / maskRatio) * scale,
+                              x2: (snap.guide.x2 / maskRatio) * scale,
+                              y2: (snap.guide.y2 / maskRatio) * scale,
+                            },
                           }
-                          axis = snap.axis
-                          result = { x: (snap.x / maskRatio) * scale, y: (snap.y / maskRatio) * scale }
                         }
+                      }
+
+                      // 한 축에서 {비콘 정렬, 복도 중앙(그 축일 때)} 중 현재 좌표에 더 가까운 쪽으로 스냅.
+                      const resolveAxis = (
+                        pos: number,
+                        beaconSnap: number | null,
+                        beaconGuide: NonNullable<typeof snapGuide> | null,
+                        corridorHere: { v: number; guide: NonNullable<typeof snapGuide> } | null,
+                      ) => {
+                        const cands: {
+                          v: number
+                          d: number
+                          beacon: NonNullable<typeof snapGuide> | null
+                          corridor: NonNullable<typeof snapGuide> | null
+                        }[] = []
+                        if (beaconSnap != null)
+                          cands.push({ v: beaconSnap, d: Math.abs(beaconSnap - pos), beacon: beaconGuide, corridor: null })
+                        if (corridorHere)
+                          cands.push({ v: corridorHere.v, d: Math.abs(corridorHere.v - pos), beacon: null, corridor: corridorHere.guide })
+                        if (!cands.length) return null
+                        cands.sort((a, b) => a.d - b.d)
+                        return cands[0]
+                      }
+
+                      const wx = resolveAxis(
+                        local.x,
+                        bg.snapX,
+                        bg.xGuide,
+                        corridor?.axis === 'x' ? { v: corridor.x, guide: corridor.guide } : null,
+                      )
+                      if (wx) {
+                        resX = wx.v
+                        lockX = true
+                        if (wx.beacon) nextAlignGuides.push(wx.beacon)
+                        if (wx.corridor) nextSnapGuide = wx.corridor
+                      }
+                      const wy = resolveAxis(
+                        local.y,
+                        bg.snapY,
+                        bg.yGuide,
+                        corridor?.axis === 'y' ? { v: corridor.y, guide: corridor.guide } : null,
+                      )
+                      if (wy) {
+                        resY = wy.v
+                        lockY = true
+                        if (wy.beacon) nextAlignGuides.push(wy.beacon)
+                        if (wy.corridor) nextSnapGuide = wy.corridor
                       }
 
                       // 가이드선은 React state로 그리는데, Konva는 dragBoundFunc가 반환한 좌표를 리액트
@@ -262,10 +317,10 @@ export function FloorMapCanvas({
                         setAlignGuides(nextAlignGuides)
                         setSnapGuide(nextSnapGuide)
                       })
-                      lockedAxisRef.current = axis
+                      lockedAxisRef.current = { x: lockX, y: lockY }
                       // Konva가 이 반환값을 setAbsolutePosition으로 그대로 적용하므로, local(줌·이동 무관)
                       // 좌표를 다시 절대 좌표로 되돌려서 반환한다.
-                      return { x: result.x * zoom + stagePos.x, y: result.y * zoom + stagePos.y }
+                      return { x: resX * zoom + stagePos.x, y: resY * zoom + stagePos.y }
                     }
                   : undefined
               }
@@ -281,9 +336,9 @@ export function FloorMapCanvas({
                 const rawX = Math.round(e.target.x() / scale)
                 const rawY = Math.round(e.target.y() / scale)
                 // 복도·정렬 스냅이 고정한 축은 grid snap으로 다시 반올림하지 않는다 — 안 그러면 눈에 보이던 정렬이 최대 2px 어긋난다.
-                const finalX = lockedAxisRef.current === 'x' ? rawX : snapToGrid(rawX)
-                const finalY = lockedAxisRef.current === 'y' ? rawY : snapToGrid(rawY)
-                lockedAxisRef.current = null
+                const finalX = lockedAxisRef.current.x ? rawX : snapToGrid(rawX)
+                const finalY = lockedAxisRef.current.y ? rawY : snapToGrid(rawY)
+                lockedAxisRef.current = { x: false, y: false }
                 onMove?.(p.id, finalX, finalY)
               }}
             >
