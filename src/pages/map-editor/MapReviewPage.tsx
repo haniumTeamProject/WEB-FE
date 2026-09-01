@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { MouseEvent as ReactMouseEvent } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
@@ -39,6 +39,99 @@ const ZOOM_MAX = 8
 // (채우기·축척·도구 미선택)는 다른 화면들처럼 배경을 드래그하면 바로 화면 이동이 된다.
 type Tool = 'fill' | 'drawArea' | 'wall' | 'scale' | 'pan' | null
 const PAN_DRAG_THRESHOLD_PX = 4 // 이 정도는 움직여야 '클릭'이 아니라 '드래그(이동)'로 간주
+
+// 도구 패널 아이콘 — 라이브러리 없이 직접 그린 최소한의 선 아이콘. 버튼이 쭉 나열돼 있으면 뭐가
+// 뭔지 구분이 안 된다는 요청에 따라, 성격별로 묶은 그룹 제목과 함께 버튼마다 붙인다.
+function IconBucket({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" style={style}>
+      <path d="M4 8.5 10.5 3l6 5.5-6.5 5.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M6.5 10.5 4.5 13c-.7 1.3.2 3 2 3h1.4c1.8 0 2.7-1.7 2-3l-1-1.7" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M5.5 7.5h9" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+function IconRectDash({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" style={style}>
+      <rect x="3.5" y="4.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2.6 2.2" />
+    </svg>
+  )
+}
+function IconBrick({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" style={style}>
+      <rect x="3" y="4" width="14" height="4.2" rx="0.5" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="3" y="8.6" width="6.5" height="4.2" rx="0.5" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="10" y="8.6" width="7" height="4.2" rx="0.5" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="3" y="13.2" width="14" height="2.8" rx="0.5" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  )
+}
+function IconRuler({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" style={style}>
+      <rect x="3" y="7.5" width="14" height="5" rx="1" transform="rotate(-18 10 10)" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+function IconSparkle({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" style={style}>
+      <path
+        d="M8 3.5c.4 2 1.6 3.2 3.6 3.6-2 .4-3.2 1.6-3.6 3.6-.4-2-1.6-3.2-3.6-3.6 2-.4 3.2-1.6 3.6-3.6Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14.5 10.5c.28 1.2.98 1.9 2.2 2.2-1.2.28-1.9.98-2.2 2.2-.28-1.2-.98-1.9-2.2-2.2 1.2-.28 1.9-.98 2.2-2.2Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+function IconHand({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" style={style}>
+      <path d="M7 10.5V4.8a1.2 1.2 0 0 1 2.4 0V9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M9.4 9V4a1.2 1.2 0 0 1 2.4 0v5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M11.8 9V5.2a1.2 1.2 0 0 1 2.4 0V11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path
+        d="M14.2 9.5a1.2 1.2 0 0 1 2.4 0v3.3c0 2.8-1.9 5.2-5 5.2h-1c-2.2 0-3.4-.8-4.6-2.6l-2-3c-.5-.8.2-1.9 1.1-1.7.5.1.9.4 1.2.8l1.1 1.4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+function IconUndo({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" style={style}>
+      <path d="M5 8h7a4 4 0 1 1 0 8h-2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M8 4.5 4.5 8 8 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+function IconRedo({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" style={{ transform: 'scaleX(-1)', ...style }}>
+      <path d="M5 8h7a4 4 0 1 1 0 8h-2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M8 4.5 4.5 8 8 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ToolGroupLabel({ children }: { children: string }) {
+  return <span className="block text-[11px] font-bold text-[#8C99B3] mb-1.5">{children}</span>
+}
+function ToolDivider() {
+  return <div style={{ height: 1, background: '#EEF1F8', margin: '14px 0' }} />
+}
 
 export default function MapReviewPage() {
   const { buildingId = '', floorId = '' } = useParams()
@@ -738,13 +831,16 @@ export default function MapReviewPage() {
     )
   }
 
-  const toolBtn = (mode: Tool, label: string) => (
+  const toolBtn = (mode: Tool, label: string, icon: ReactNode) => (
     <button
       onClick={() => selectTool(tool === mode ? null : mode)}
-      className={`h-11 rounded-lg text-sm font-medium border ${
+      className={`h-11 rounded-lg text-sm font-medium border flex items-center gap-2.5 px-3 ${
         tool === mode ? 'bg-brand text-white border-transparent' : 'bg-white text-body border-line'
       }`}
     >
+      <span className={tool === mode ? 'opacity-100' : 'opacity-70'} style={{ display: 'flex', flexShrink: 0 }}>
+        {icon}
+      </span>
       {label}
     </button>
   )
@@ -820,36 +916,14 @@ export default function MapReviewPage() {
 
         <Card className="w-[260px] shrink-0">
           <h3>도구</h3>
+
+          <ToolGroupLabel>그리기</ToolGroupLabel>
           <div className="grid gap-2">
-            {toolBtn('fill', '영역 채우기')}
-            {toolBtn('drawArea', '영역 그리기 (사각형)')}
-            {toolBtn('wall', '벽 그리기 (틈 막기)')}
-            {toolBtn('scale', '축척 설정')}
-            {toolBtn('pan', '화면 이동')}
+            {toolBtn('fill', '영역 채우기', <IconBucket />)}
+            {toolBtn('drawArea', '영역 그리기 (사각형)', <IconRectDash />)}
+            {toolBtn('wall', '벽 그리기 (틈 막기)', <IconBrick />)}
           </div>
-
-          <div className="undo-row grid grid-cols-2 gap-2 mt-2">
-            <Button
-              variant="outline"
-              className="whitespace-nowrap"
-              style={{ padding: '0 4px', fontSize: 13 }}
-              onClick={undo}
-              title="실행 취소 (Ctrl+Z)"
-            >
-              ← 되돌리기
-            </Button>
-            <Button
-              variant="outline"
-              className="whitespace-nowrap"
-              style={{ padding: '0 4px', fontSize: 13 }}
-              onClick={redo}
-              title="다시 실행 (Ctrl+Shift+Z)"
-            >
-              다시실행 →
-            </Button>
-          </div>
-
-          <div className="mt-4">
+          <div className="mt-3">
             <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
               벽 인식 민감도: {threshold}
               <InfoTooltip text="밖으로 새면 ↑ 올리고, 방 안에서 안 퍼지면 ↓ 내리세요." />
@@ -864,8 +938,28 @@ export default function MapReviewPage() {
             />
           </div>
 
+          <ToolDivider />
+
+          <ToolGroupLabel>보정</ToolGroupLabel>
+          <div className="grid gap-2">{toolBtn('scale', '축척 설정', <IconRuler />)}</div>
+          <div className="mt-3">
+            {savedScale ? (
+              <p className="text-[13px] text-ink">
+                현재 축척: 100px ≈ {(savedScale.scaleMPerPx * 100).toFixed(2)}m
+              </p>
+            ) : (
+              <p className="text-[13px] text-muted">축척이 아직 설정되지 않았습니다.</p>
+            )}
+            {tool === 'scale' && (
+              <p className="text-[12px] text-muted mt-1">
+                실제 거리를 아는 두 지점을 도면 위에서 순서대로 클릭하세요.
+              </p>
+            )}
+          </div>
+
           <div className="mt-4">
             <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              <IconSparkle style={{ color: '#8C99B3', flexShrink: 0 }} />
               틈 메우기
               <InfoTooltip text="복도가 살짝 끊어져 보이면, 아래 거리 이내일 때 자동으로 이어붙여요." />
             </span>
@@ -893,6 +987,7 @@ export default function MapReviewPage() {
 
           <div className="mt-4">
             <span className="flex items-center gap-1.5 text-[13px] text-muted mb-2">
+              <IconSparkle style={{ color: '#8C99B3', flexShrink: 0 }} />
               벽 모양 다듬기
               <InfoTooltip text="자동으로 채워진 벽 모양이 울퉁불퉁하거나 작은 구멍·돌기가 있으면, 지정한 크기 이하는 매끄럽게 다듬어요." />
             </span>
@@ -924,23 +1019,36 @@ export default function MapReviewPage() {
             </p>
           )}
 
-          <div className="mt-4">
-            <span className="block text-[13px] text-muted mb-2">축척</span>
-            {savedScale ? (
-              <p className="text-[13px] text-ink">
-                현재 축척: 100px ≈ {(savedScale.scaleMPerPx * 100).toFixed(2)}m
-              </p>
-            ) : (
-              <p className="text-[13px] text-muted">축척이 아직 설정되지 않았습니다.</p>
-            )}
-            {tool === 'scale' && (
-              <p className="text-[12px] text-muted mt-1">
-                실제 거리를 아는 두 지점을 도면 위에서 순서대로 클릭하세요.
-              </p>
-            )}
+          <ToolDivider />
+
+          <ToolGroupLabel>화면</ToolGroupLabel>
+          <div className="grid gap-2">{toolBtn('pan', '화면 이동', <IconHand />)}</div>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <Button
+              variant="outline"
+              className="whitespace-nowrap flex items-center justify-center gap-1.5"
+              style={{ padding: '0 4px', fontSize: 13 }}
+              onClick={undo}
+              title="실행 취소 (Ctrl+Z)"
+            >
+              <IconUndo />
+              되돌리기
+            </Button>
+            <Button
+              variant="outline"
+              className="whitespace-nowrap flex items-center justify-center gap-1.5"
+              style={{ padding: '0 4px', fontSize: 13 }}
+              onClick={redo}
+              title="다시 실행 (Ctrl+Shift+Z)"
+            >
+              <IconRedo />
+              다시실행
+            </Button>
           </div>
 
-          <div className="grid gap-2 mt-4">
+          <ToolDivider />
+
+          <div className="grid gap-2">
             <Button variant="outline" onClick={clearAll}>
               전체 지우기
             </Button>
