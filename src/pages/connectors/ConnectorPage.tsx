@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import type { CSSProperties, FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useBuilding } from '@/features/buildings/hooks'
 import { useFloors } from '@/features/floors/hooks'
@@ -20,6 +20,49 @@ import { AsyncState } from '@/components/ui/AsyncState'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const TYPE_LABEL: Record<ConnectorType, string> = { elevator: '엘리베이터', stairs: '계단' }
+// 타입별 아이콘·색 — 목록에서 텍스트를 읽지 않아도 엘리베이터/계단이 바로 구분되게.
+const TYPE_COLOR: Record<ConnectorType, string> = { elevator: '#4B70E5', stairs: '#8C5BD6' }
+
+function IconElevator({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" style={style}>
+      <rect x="5" y="3" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8.3 8.7 10 6.7l1.7 2M8.3 11.3 10 13.3l1.7-2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+function IconStairs({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" style={style}>
+      <path d="M3 16h3v-3h3v-3h3v-3h3V4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+function IconPencil({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" style={style}>
+      <path
+        d="M5 15l.7-3 7.5-7.5a1.4 1.4 0 0 1 2 0l.3.3a1.4 1.4 0 0 1 0 2L8 14.3 5 15Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+function IconTrash({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" style={style}>
+      <path
+        d="M6 7h8M8.3 5h3.4M7.2 7l.5 8.6c.05.85.75 1.4 1.6 1.4h1.4c.85 0 1.55-.55 1.6-1.4l.5-8.6"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
 
 // 모달이 열릴 때마다 새로 마운트돼야 로컬 state가 그 시점의 connector 값을 정확히 반영한다 —
 // BuildingDetailPage의 EditBuildingForm과 같은 이유(Modal은 열려 있을 때만 children을 그린다).
@@ -218,28 +261,42 @@ export default function ConnectorPage() {
                 key={c.id}
                 className="flex items-center justify-between p-4 border border-line rounded-lg"
               >
-                <div>
-                  <div className="font-semibold text-ink">{c.name}</div>
-                  <div className="text-[13px] text-muted">
-                    {TYPE_LABEL[c.type]} · 운행층 {c.floors.join('·')}
+                <div className="flex items-center gap-3 min-w-0">
+                  <span
+                    className="flex items-center justify-center rounded-lg flex-shrink-0"
+                    style={{ width: 34, height: 34, background: `${TYPE_COLOR[c.type]}22`, color: TYPE_COLOR[c.type] }}
+                  >
+                    {c.type === 'elevator' ? <IconElevator /> : <IconStairs />}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-ink">{c.name}</div>
+                    <div className="text-[13px] text-muted">
+                      {TYPE_LABEL[c.type]} · 운행층 {c.floors.join('·')}
+                    </div>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    style={{ height: 36, padding: '0 14px' }}
+                <div className="flex gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    title="수정"
+                    aria-label="수정"
                     onClick={() => setEditTarget(c)}
+                    className="flex items-center justify-center rounded-lg border border-line bg-white text-muted hover:bg-gray-50"
+                    style={{ width: 34, height: 34 }}
                   >
-                    수정
-                  </Button>
-                  <Button
-                    variant="danger"
-                    style={{ height: 36, padding: '0 14px' }}
+                    <IconPencil />
+                  </button>
+                  <button
+                    type="button"
+                    title="삭제"
+                    aria-label="삭제"
                     disabled={del.isPending}
                     onClick={() => setDeleteTarget({ id: c.id, name: c.name })}
+                    className="flex items-center justify-center rounded-lg border bg-white hover:bg-red-50"
+                    style={{ width: 34, height: 34, borderColor: '#F3C6C6', color: '#DC4C4C' }}
                   >
-                    삭제
-                  </Button>
+                    <IconTrash />
+                  </button>
                 </div>
               </div>
             ))}

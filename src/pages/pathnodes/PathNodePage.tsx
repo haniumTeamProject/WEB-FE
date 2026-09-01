@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import Konva from 'konva'
 import { Stage, Layer, Image as KonvaImage, Circle, Line } from 'react-konva'
 import { Link, useParams } from 'react-router-dom'
@@ -33,6 +34,58 @@ const MAX_CANVAS_W = 1000
 // 맞은편 도착점을 놓치기 쉽다. '복도 = 폭 ≤3m' 정의와도 일치. 드물게 더 넓은 곳을 건너야 하면
 // 관리자가 '건너기 추가' 도구로 직접 그으면 된다.
 const CROSSING_MAX_M = 3
+
+// 모드 버튼 아이콘 — 확인/추가/삭제가 한 줄로 나열돼 있으면 성격이 다른 조작(실수하면 되돌리기 쉬운
+// 것과 파급 효과가 있는 것)이 안 구분된다는 요청에 따라, 버튼마다 붙여 그룹 성격을 눈에 띄게 한다.
+function IconTarget({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" style={style}>
+      <circle cx="10" cy="10" r="6.4" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="10" cy="10" r="2.9" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="10" cy="10" r="0.9" fill="currentColor" />
+    </svg>
+  )
+}
+function IconPlusCircle({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" style={style}>
+      <circle cx="10" cy="10" r="6.8" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10 6.8v6.4M6.8 10h6.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+function IconLink({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" style={style}>
+      <path d="M8.3 11.7 11.7 8.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M9.3 7.3c1.3-1.3 3.4-1.3 4.6 0h0c1.3 1.3 1.3 3.4 0 4.6l-1 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M10.7 12.7c-1.3 1.3-3.4 1.3-4.6 0h0c-1.3-1.3-1.3-3.4 0-4.6l1-1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+function IconShuffle({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" style={style}>
+      <path d="M4 6h3l7 8h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M13.5 4.3 16 6l-2.5 1.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 14h3l7-8h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M13.5 15.7 16 14l-2.5-1.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+function IconTrash({ style }: { style?: CSSProperties }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" style={style}>
+      <path
+        d="M6 7h8M8.3 5h3.4M7.2 7l.5 8.6c.05.85.75 1.4 1.6 1.4h1.4c.85 0 1.55-.55 1.6-1.4l.5-8.6"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
 const MIN_CORNER_CLEARANCE_M = 0.3 // 코너 횡단 좌우 최소 여유 — 이보다 벽이 가까우면 벽을 타는 걸로 보고 안 만든다
 const DEFAULT_CROSS_PENALTY_M = 5 // 건너기 페널티 기본값 — 이만큼 이상 절약될 때만 건넘
 
@@ -783,52 +836,65 @@ export default function PathNodePage() {
               노드·엣지 편집
               <InfoTooltip text="자동 생성 결과를 관리자가 직접 손보는 도구예요. 겹친 노드를 지워 연결이 끊겼을 때는 '노드 연결'로 다시 이어 주세요. 어떤 편집이든 되돌리기(Ctrl+Z)로 복구할 수 있어요." />
             </span>
+
+            <span className="block text-[11px] font-bold text-[#8C99B3] mb-1.5">수동 추가</span>
             <div className="grid grid-cols-2 gap-2">
               <Button
                 variant={addNodeMode ? 'primary' : 'outline'}
-                className="whitespace-nowrap"
+                className="whitespace-nowrap flex items-center justify-center gap-1.5"
                 style={{ padding: '0 4px', fontSize: 13 }}
                 disabled={!maskDims}
                 onClick={() => switchMode('addNode')}
               >
+                <IconPlusCircle />
                 노드 추가
               </Button>
               <Button
                 variant={connectMode ? 'primary' : 'outline'}
-                className="whitespace-nowrap"
+                className="whitespace-nowrap flex items-center justify-center gap-1.5"
                 style={{ padding: '0 4px', fontSize: 13 }}
                 disabled={nodes.length < 2}
                 onClick={() => switchMode('connect')}
               >
+                <IconLink />
                 노드 연결
               </Button>
               <Button
                 variant={addCrossMode ? 'primary' : 'outline'}
-                className="whitespace-nowrap"
+                className="whitespace-nowrap flex items-center justify-center gap-1.5 col-span-2"
                 style={{ padding: '0 4px', fontSize: 13 }}
                 disabled={nodes.length < 2}
                 onClick={() => switchMode('addCross')}
               >
+                <IconShuffle />
                 건너기 추가
               </Button>
+            </div>
+
+            <span className="block text-[11px] font-bold mt-3 mb-1.5" style={{ color: '#DC4C4C' }}>
+              삭제
+            </span>
+            <div className="grid grid-cols-1 gap-2">
               <Button
                 variant={deleteMode ? 'danger' : 'outline'}
-                className="whitespace-nowrap"
+                className="whitespace-nowrap flex items-center justify-center gap-1.5"
                 style={{ padding: '0 4px', fontSize: 13 }}
                 disabled={nodes.length === 0}
                 onClick={() => switchMode('deleteNode')}
               >
+                <IconTrash />
                 노드 삭제
               </Button>
+              <Button
+                variant={edgeDeleteMode ? 'danger' : 'outline'}
+                className="flex items-center justify-center gap-1.5"
+                disabled={edges.filter((e) => e.type === 'cross').length === 0}
+                onClick={() => switchMode('deleteEdge')}
+              >
+                <IconTrash />
+                {edgeDeleteMode ? '건너기 엣지 삭제 모드 끄기' : '건너기 엣지 삭제'}
+              </Button>
             </div>
-            <Button
-              variant={edgeDeleteMode ? 'danger' : 'outline'}
-              className="w-full mt-2"
-              disabled={edges.filter((e) => e.type === 'cross').length === 0}
-              onClick={() => switchMode('deleteEdge')}
-            >
-              {edgeDeleteMode ? '건너기 엣지 삭제 모드 끄기' : '건너기 엣지 삭제'}
-            </Button>
 
             {addNodeMode && (
               <p className="text-[12px] text-muted mt-1.5">
@@ -884,10 +950,11 @@ export default function PathNodePage() {
             <span className="block text-[13px] text-muted mb-2">경로 찾기 (테스트)</span>
             <Button
               variant={testMode ? 'primary' : 'outline'}
-              className="w-full"
+              className="w-full flex items-center justify-center gap-1.5"
               disabled={nodes.length === 0}
               onClick={() => switchMode('test')}
             >
+              <IconTarget />
               {testMode ? '테스트 모드 끄기' : '시작·도착 노드 클릭'}
             </Button>
             {testMode && (
